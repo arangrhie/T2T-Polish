@@ -1,0 +1,2 @@
+DockerImage:google/deepvariant:0.10.0
+CMD:/opt/deepvariant/bin/run_deepvariant --model_type=WGS --ref=t2t-chm13.20200602.fasta --reads=SRR.bam --output_vcf=out.vcf.gz --num_shards=36
