@@ -86,8 +86,7 @@ else
 		for i in $(seq 1 $EXPECTED)
 		do
 			modulo_=$(($i%SLURM_ARRAY_TASK_COUNT))  #slurm job ids must be 0-based, e.g., --array=0-31
-			if [[ $modulo_ -eq $SLURM_ARRAY_JOB_ID ]]; then
-				i=$SLURM_ARRAY_TASK_ID
+			if [[ $modulo_ -eq $SLURM_ARRAY_TASK_ID ]]; then
 				split=split.$target.srt_id.$i
 				echo "Processing file $split"
 				cat $PREFIX.header > $split.sam
