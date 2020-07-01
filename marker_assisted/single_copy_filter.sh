@@ -20,6 +20,10 @@
 #  Please cite the authors in any work or product based on this material.
 ######################################################################
 
+echo "*** DEPRECATED. USE _submit.sh instead. ***"
+echo
+
+
 if [[ "$#" -lt 4 ]]; then
 	echo "Usage: single_copy_filter.sh alignment target asm marker.meryl"
 	echo
@@ -64,7 +68,7 @@ if [ -e $target.markersandlength.cram ]; then
 else
    if [ ! -e $target.srt_id.bam ]; then
       echo "Get $target.srt_id.bam, sorted by read name"
-      samtools sort -T $target.tmp -O bam -@$cores -m2G $alignment > $target.srt_id.bam
+      samtools sort -n -T $target.tmp -O bam -@$cores -m2G $alignment > $target.srt_id.bam
 
       # Get header
       samtools view -H $alignment > $PREFIX.header
@@ -84,11 +88,16 @@ else
 	      EXPECTED=1
 	   else
 	      EXPECTED=$(($RID_TOTAL/100000))
-	      for i in $(seq 1 $EXPECTED)
-	      do
-		 sed -n ${i}p rid.list >> rid.10kth	# 100000th read id
-	      done
-	      samtools view -@$cores $target.srt_id.bam | java -jar -Xmx4g src/txtSplitByFile.jar - rid.10kth 1 split.$target.srt_id
+
+	      echo "Collect every $NUM_READS_PER_FILE read id to rid.ith"
+
+	      if [[ -s rid.ith ]]; then
+	         echo "*** Found rid.ith. Removing it. ***"
+	         rm rid.ith
+	      fi
+	      awk -v NUM_READS_PER_FILE=$NUM_READS_PER_FILE 'NR%NUM_READS_PER_FILE == 0 {print $0}' rid.list >> rid.ith
+
+	      samtools view -@$cores $target.srt_id.bam | java -jar -Xmx4g src/txtSplitByFile.jar - rid.ith 1 split.$target.srt_id
 	      EXPECTED=$((EXPECTED+1))
 	   fi
 	   echo "$target.srt_id.bam is splitted into $EXPECTED files, with prefix split.$target.srt_id"
