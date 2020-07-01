@@ -73,8 +73,8 @@ else
 		cat $split | awk -v rid="a" '{if (rid!=$1) {print $1; rid=$1}}' > $split.tmp.list
 		for rid in $(cat $split.tmp.list)
 		do
-			# echo "Sort alignments from read $rid by position" ## commenting out as printing these logs take much longer
-			cat $split | grep $rid | sort -n -k4 >> $split.tmp.sam
+			# echo "Sort alignments from read $rid by flag" ## commenting out as printing these logs take much longer
+			cat $split | grep $rid | sort -n -k2 >> $split.tmp.sam
 		done
 		echo -e "\nsamToAlignment $split.tmp.sam $asm"
 		$SCRIPT/src/samToAlignment $split.tmp.sam $asm 2> $split.tmp.err \
