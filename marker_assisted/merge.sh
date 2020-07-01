@@ -88,24 +88,34 @@ else
 	fi
 
 	echo "Subset by markers"
-	samtools view -h -O sam -@$cores $alignment > $target.sam
-	echo "python src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam"
-	python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam
-	samtools sort -@$cores -O cram -o $target.markers.cram -T $target.markers.tmp --reference=$asm $target.markers.sam
-	$tools/IGVTools/igvtools count $target.markers.cram $target.markers.tdf $asm.fai
+	if [ ! -s $target.markers.cram ]; then
+		samtools view -h -O sam -@$cores $alignment > $target.sam
+		echo "python src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam"
+		python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam
+		samtools sort -@$cores -O cram -o $target.markers.cram -T $target.markers.tmp --reference=$asm $target.markers.sam
+		$tools/IGVTools/igvtools count $target.markers.cram $target.markers.tdf $asm.fai
+	fi
 	echo
 
 	echo "# hard filter alignments < $len_filt kb to $target.filtered.sam"
-	cat $target.header > $target.filtered.sam
-	cat $target.markers.sam |grep -v "^@" |awk -v l=$len_filt '{if (length($10) >= l) print $0}' >> $target.filtered.sam
+	if [ -s $target.filtered.sam ]; then
+		echo "*** Found $target.filtered.sam. Skipping this step. ***"
+	else
+		cat $target.header > $target.filtered.sam
+		samtools view -@$cores $target.markers.sam |awk -v l=$len_filt '{if (length($10) >= l) print $0}' >> $target.filtered.sam
+	fi
 
-	# also filter by alignment legnth
-	$SCRIPT/src/samToErrorRate $target.filtered.sam $asm \
+	echo "# also filter by alignment legnth and idy"
+	if [ -s $target.filteredList ]; then
+		echo "*** Found $target.filteredList. Skipping this step. ***"
+	else
+		$SCRIPT/src/samToErrorRate $target.filtered.sam $asm \
 		| awk '{if ($9 == 0) print $0; else print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7"\t"$8"\t1\t"$12-$11"\t"$12-$10"\t"$12"\t"$13"\t"$14"\t"$15"\t"$16"\t"$17}' \
 		| awk '{if ($3 <= -25000 && $4 >= 75) print $target}'| awk -v rid="" '{if (rid!=$1) {print $1; rid=$1}}' > $target.filteredList
+	fi
 	cat $target.header > $target.tmp.sam
-	cat $target.filtered.sam |grep -v "^@" > $target.tmp2.sam
-	java $SCRIPT/src/SubFile $target.filteredList $target.tmp2.sam >> $target.tmp.sam
+	samtools view -@$cores $target.filtered.sam > $target.tmp2.sam
+	java -cp $SCRIPT/src/ SubFile $target.filteredList $target.tmp2.sam >> $target.tmp.sam
 	mv $target.tmp.sam $target.filtered.sam
 fi
 
