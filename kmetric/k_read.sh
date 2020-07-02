@@ -17,7 +17,7 @@ hap_peak=$4
 echo "
 # Dump SEQ-POS SEQ POS COUNT/hap-peak to a table"
 # Adjust memory accordingly
-meryl-lookup -dump -memory 200 -sequence $asm_fa -mers $read | awk -v hap=$hap_peak '$4=="T" {POS=$3+1; COUNT=$NF+$(NF-2); print $1"-"POS"\t"$1"\t"POS"\t"(COUNT/hap)}' > $out.read
+meryl-lookup -dump -memory 200 -sequence $asm_fa -mers $read | awk -v hap=$hap_peak '{ COUNT=$NF+$(NF-2); print $1"\t"($3+1)"\t"(COUNT/hap) }' > $out.read
 
 echo "
 Done!"

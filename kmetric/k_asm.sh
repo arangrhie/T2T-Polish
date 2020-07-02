@@ -13,8 +13,8 @@ asm=$2
 out=$3
 
 echo "
-# Dump SEQ-POS SEQ POS COUNT to a table"
-meryl-lookup -dump -memory 12 -sequence $asm_fa -mers $asm | awk '$4=="T" {POS=$3+1; print $1"-"POS"\t"$1"\t"POS"\t"($NF+$(NF-2))}' > $out.asm
+# Dump SEQ POS COUNT to a table"
+meryl-lookup -dump -memory 12 -sequence $asm_fa -mers $asm | awk '{print $1"\t"($3+1)"\t"($NF+$(NF-2))}' > $out.asm
 
 echo "Done!"
 
