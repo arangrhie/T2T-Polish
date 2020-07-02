@@ -67,7 +67,7 @@ done
 
 #join read multiplicity and asm multiplicity in a single table
 
-join -a 1 ${ASM} ${READ} | awk '{if(NF<4) {print $0"\t0\t0"}else{print $0}}' | awk -F'\t' -v hap=${PEAK} 'BEGIN{print "track autoScale=on"}{if($3==1){print "variableStep chrom="$2" span=1"};if($5>$3){print $3"\t"$6/$4/hap*-1}else{print $2"\t"$4/$6/hap}' > ${OUT}.expfrq.Wig
+join -a 1 ${ASM} ${READ} | awk '{if(NF<4) {print $0"\t0\t0"}else{print $0}}' | awk -F'\t' -v hap=${PEAK} 'BEGIN{print "track autoScale=on yLineMark=0 yLineOnOff=on"}{if($3==1){print "variableStep chrom="$2" span=1"};if($5>$3){print $3"\t"$6/$4/hap*-1}else{print $2"\t"$4/$6/hap}' > ${OUT}.expfrq.Wig
 
 #convert to BigWig
 ./wigToBigWig ${OUT}.expfrq.Wig ${CHR} ${OUT}.expfrq.bw
