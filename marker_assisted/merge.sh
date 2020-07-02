@@ -104,6 +104,7 @@ else
 		cat $target.header > $target.filtered.sam
 		samtools view -@$cores $target.markers.sam |awk -v l=$len_filt '{if (length($10) >= l) print $0}' >> $target.filtered.sam
 	fi
+	echo
 
 	echo "# also filter by alignment legnth and 75% idy"
 	if [ -s $target.filteredList ]; then
@@ -117,8 +118,18 @@ else
 	samtools view -@$cores $target.filtered.sam > $target.tmp2.sam
 	java -cp $SCRIPT/src/ SubFile $target.filteredList $target.tmp2.sam >> $target.tmp.sam
 	mv $target.tmp.sam $target.filtered.sam
+	rm $target.tmp2.sam
 fi
 
+echo "
+# generate $target.markersandlength.cram"
 samtools sort -@${cores} -O cram -o $target.markersandlength.cram -T $target.markersandlength.tmp --reference=$asm $target.filtered.sam
 $tools/IGVTools/igvtools count $target.markersandlength.cram $target.markersandlength.tdf $asm.fai
 
+echo "
+# Index"
+samtools index $target.markersandlength.cram
+
+echo "
+# Cleanup"
+rm $target.filtered.sam $target.sam $target.markers.sam $target.sam
