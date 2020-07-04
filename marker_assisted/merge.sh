@@ -54,7 +54,7 @@ len_filt=$((len_filt*1000))
 
 
 SCRIPT=`cat SCRIPT`
-module load samtools
+module load samtools/1.9
 
 set -e
 
@@ -90,9 +90,9 @@ else
 	echo "Subset by markers"
 	if [ ! -s $target.markers.cram ]; then
 		samtools view -h -O sam -@$cores $alignment > $target.sam
-		echo "python src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam"
+		echo "python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam"
 		python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam
-		samtools sort -@$cores -O cram -o $target.markers.cram -T $target.markers.tmp --reference=$asm $target.markers.sam
+		samtools view -@$cores -O cram -o $target.markers.cram --reference=$asm $target.markers.sam
 		$tools/IGVTools/igvtools count $target.markers.cram $target.markers.tdf $asm.fai
 	fi
 	echo
@@ -123,7 +123,7 @@ fi
 
 echo "
 # generate $target.markersandlength.cram"
-samtools sort -@${cores} -O cram -o $target.markersandlength.cram -T $target.markersandlength.tmp --reference=$asm $target.filtered.sam
+samtools view -@${cores} -O cram -o $target.markersandlength.cram --reference=$asm $target.filtered.sam
 $tools/IGVTools/igvtools count $target.markersandlength.cram $target.markersandlength.tdf $asm.fai
 
 echo "
@@ -132,4 +132,4 @@ samtools index $target.markersandlength.cram
 
 echo "
 # Cleanup"
-rm $target.filtered.sam $target.sam $target.markers.sam $target.sam
+rm $target.filtered.sam $target.sam $target.markers.sam $target.bam split.$target.srt_id.* $target.align* $target.filteredList
