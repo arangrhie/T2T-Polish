@@ -126,4 +126,4 @@ done< <(bcftools view -H $VAR)
 meryl-lookup -dump -memory 200 -sequence var.fa -mers ../t2t-chm13.20200602.meryl | awk '{print $1"\t"($3+1)"\t"($NF+$(NF-2))}' > ${OUT}.asm
 meryl-lookup -dump -memory 200 -sequence var.fa -mers ../CHM13.10X.k21.meryl | awk -v hap=${PEAK} '{ COUNT=$NF+$(NF-2); print $1"\t"($3+1)"\t"(COUNT/hap) }' > ${OUT}.read
 
-cut -f3 ${OUT}.read | paste ${OUT}.asm -
+cut -f3 ${OUT}.read | paste ${OUT}.asm - | awk '{if ($4==0 || $3==0) {print $0"\t0"} else if ($4>=$3) {print $0"\t"($4/$3)} else {print $0"\t"(-1*($3/$4))}}'
