@@ -22,7 +22,9 @@ elif [ $1 == "-h" ]; then
 	-d	meryl db
 	-k	kmer length
 	-p	haploid peak
+	-c	max number of combinatory calls (default 15)
 	-o	output prefix
+	-y	number of threads
 EOF
 
 exit 0
@@ -33,7 +35,7 @@ printf "\n\n++++ running: k_eval.sh ++++\n\n"
 
 #set options
 
-while getopts ":a:v:d:k:p:o:" opt; do
+while getopts ":a:v:d:k:p:c:o:t:" opt; do
 
 	case $opt in
 		a)
@@ -56,10 +58,18 @@ while getopts ":a:v:d:k:p:o:" opt; do
 			PEAK="$OPTARG"
 			echo "Haploid peak: -p $OPTARG"
 			;;
+		c)
+			COMB="$OPTARG"
+			echo "Combinations: -c $OPTARG"
+			;;
 		o)
 			OUT="$OPTARG"
 			echo "Output prefix: -o $OPTARG"
-			;;           
+			;;   
+		t)
+			CPU="$OPTARG"
+			echo "Number of threads: -t $OPTARG"
+			;;         
 		\?)
 			echo "ERROR - Invalid option: -$OPTARG" >&2
 			exit 1
@@ -68,39 +78,104 @@ while getopts ":a:v:d:k:p:o:" opt; do
 	printf "\n"
 done
 
-rm -f ${OUT}.calls
-
 RAM=$(mktemp -dt "k_eval.XXXXXXXX" --tmpdir=/run/user/$(id -u))
 
 printf "Temporary files written to: "
 echo $RAM
 
+if [[ -z ${COMB} ]]; then
+
+	COMB=15
+
+fi
+
 if [[ ! -e ${OUT}.results ]]; then
 
-	while read -a var
+	bcftools view --threads $((${CPU}-1)) -H -i 'QUAL>20 && (GT="0/0" || GT="0/1")' $VAR > ${RAM}/vars.vcf
+	
+	n_vars=$(wc -l ${RAM}/vars.vcf | awk '{print $1}')
 
-		do
+	a=1
+	u=1
+	STR=1
 
-		printf "\n"
-
-		printf "%s\t"  "${var[@]}"
-
-		printf "\n"
-
-		bcftools view -h $VAR > ${RAM}/var.vcf
+	while [ $a -le $n_vars ]
+	
+	do
+	
+		o=2
+	
+		truncate -s 0 ${RAM}/var.vcf
+		
+		var=($(sed -n "${a}p" < ${RAM}/vars.vcf))
+		a=$((a+1))
 
 		printf "%s\t"  "${var[@]}" >> ${RAM}/var.vcf
-
-		bcftools view -Oz ${RAM}/var.vcf > ${RAM}/var.vcf.gz
-		bcftools index -f ${RAM}/var.vcf.gz
-		tabix -fp vcf ${RAM}/var.vcf.gz
-
-		if [[ ! ${var[4]} == *","* ]]; then
-
+		printf "\n" >> ${RAM}/var.vcf
+				
+		END=$(( ${var[1]} + ${K} - 2 + ${#var[3]}))
+		
+		while [[ ! -z "${var}" && $END -gt $STR && $o -le ${COMB} && $a -le $(( $n_vars - 1 )) ]]
+		
+		do
+				
+			var=($(sed -n "${a}p" < ${RAM}/vars.vcf))
 			STR=$(( ${var[1]} - ${K} + 1))
-			END=$(( ${var[1]} + ${K} - 2 + ${#var[3]}))
+			
+			if [[ $END -gt $STR && $o -le ${COMB} ]]; then
 
-			samtools faidx ${ASM} ${var[0]}:${STR}-${END} > ${RAM}/ref.fa
+			printf "%s\t"  "${var[@]}" >> ${RAM}/var.vcf
+			printf "\n" >> ${RAM}/var.vcf
+			
+			END=$(( ${var[1]} + ${K} - 2 + ${#var[3]}))		
+			
+			o=$((o+1))
+			a=$((a+1))
+			
+			fi
+					
+		done
+				
+		readarray -t var_ls < ${RAM}/var.vcf
+	
+		n=${#var_ls[@]}
+	
+		for (( e = 1; e < 2**n; e++ )); do
+
+			combination=()
+	
+			idx=$e
+	
+			for (( j = 0; j < $n; j++ )); do
+	
+				if (( idx % 2 )); then combination=("${combination[@]}" "${var_ls[$j]}"); fi
+	
+				idx=$((idx>>1))
+	
+			done
+		
+			printf "\n"
+
+			printf "%s\n" "${combination[@]}"
+
+			printf "\n"
+		
+			FIRST=$(echo ${combination[0]} | awk '{print $2}')
+			LAST=$(echo ${combination[-1]} | awk '{print $2}')
+		
+			STR=$(( ${FIRST} - ${K} + 1))
+			END=$(( ${LAST} + ${K} - 2 + ${#var[3]}))
+			chr=$(echo ${combination[0]} | awk '{print $1}')
+
+			bcftools view -h $VAR > ${RAM}/var.vcf
+
+			printf "%s\n"  "${combination[@]}" >> ${RAM}/var.vcf
+		
+			bcftools view -Oz ${RAM}/var.vcf > ${RAM}/var.vcf.gz
+			bcftools index -f ${RAM}/var.vcf.gz
+			tabix -fp vcf ${RAM}/var.vcf.gz
+
+			samtools faidx ${ASM} ${chr}:${STR}-${END} > ${RAM}/ref.fa
 
 			printf '\nReference sequence:\n\n'
 
@@ -112,11 +187,13 @@ if [[ ! -e ${OUT}.results ]]; then
 
 			paste <(printf "%s\n" "${!REF[@]}" | awk '{print $0+1}') <(printf "%s\n" "${REF[@]}")
 
-			for ((i=0; i< "${#REF[@]}"; i++)) do printf ">${var[0]}:${STR}-${END}_ref_%s\n%s\n" $(($i + 1)) "${REF[$i]}" >> ${RAM}/var.fa; done
+			for ((i=0; i<"${#REF[@]}"; i++)) do printf ">${u}#${chr}:${STR}-${END}_ref_%s\n%s\n" $(($i + 1)) "${REF[$i]}" >> ${RAM}/var.fa; done
+			
+			printf "%s\t%s\n" ${u} $(bcftools view -H ${RAM}/var.vcf | awk '{printf "%s,",$1":"$2}' ) >> lookup.table 
 
 			printf '\nAlternate sequence:\n\n'
 
-			sed -E "2s/^(.{$(( ${K} - 1 ))})${var[3]}/\1${var[4]}/" ${RAM}/ref.fa > ${RAM}/alt.fa
+			cat ${RAM}/ref.fa | bcftools consensus ${RAM}/var.vcf.gz > ${RAM}/alt.fa 2>/dev/null
 
 			cat ${RAM}/alt.fa
 
@@ -126,18 +203,21 @@ if [[ ! -e ${OUT}.results ]]; then
 
 			paste <(printf "%s\n" "${!ALT[@]}" | awk '{print $0+1}') <(printf "%s\n" "${ALT[@]}")
 
-			for ((i=0; i< "${#ALT[@]}"; i++)) do printf ">${var[0]}:${STR}-${END}_alt_%s\n%s\n" $(($i + 1)) "${ALT[$i]}" >> ${RAM}/var.fa; done
+			for ((i=0; i<"${#ALT[@]}"; i++)) do printf ">${u}#${chr}:${STR}-${END}_alt_%s\n%s\n" $(($i + 1)) "${ALT[$i]}" >> ${RAM}/var.fa; done
+			
+			u=$((u+1))
 
-		else
+		done
 
-			printf '\nComplex variant, skipping.\n\n'
+	done
+	
+	filename=$(basename -- "${ASM}")
+	filename="${filename%.*}"
+	
+	meryl count k=${K} ${ASM} output ${filename}.meryl
 
-		fi
-
-	done< <(bcftools view -H -i 'QUAL>20 && (GT="0/0" || GT="0/1")' $VAR)
-
-	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ../t2t-chm13.20200602.meryl | awk '{print $1"\t"($NF+$(NF-2))}' > ${OUT}.asm
-	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ../CHM13.10X.k21.meryl | awk -v hap=${PEAK} '{ COUNT=$NF+$(NF-2); print $1"\t"(COUNT/hap) }' > ${OUT}.read
+	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ${filename}.meryl | awk '{print $1"\t"($NF+$(NF-2))}' > ${OUT}.asm
+	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ${DB} | awk -v hap=${PEAK} '{COUNT=$NF+$(NF-2); print $1"\t"(COUNT/hap) }' > ${OUT}.read
 	
 	cut -f2 ${OUT}.read | paste ${OUT}.asm - | awk '{if (index($1, "ref") != 0) {diff=-1} else {diff=1}; 
 	if($3==0) {print $0"\tNA\tNA"}
@@ -146,7 +226,7 @@ if [[ ! -e ${OUT}.results ]]; then
 	else if($3>=$2 && $2==0 && $2+diff!=0){print $0"\tNA\t"(-1*($3/($2+diff)-1))}
 	else if($3<$2 && $2!=0 && $2+diff!=0){print $0"\t"($2/$3-1)"\t"(($2+diff)/$3-1)}
 	else if($3<$2 && $2!=0 && $2+diff==0){print $0"\t"($2/$3-1)"\tNA"}
-	else if($3<$2 && $2==0 && $2+diff!=0){print $0"\tNA\t"(($2+diff)/$3-1)}
+	else {printf "whooops"}
 
 	}' > ${OUT}.results
 
@@ -154,27 +234,41 @@ if [[ ! -e ${OUT}.results ]]; then
 
 fi
 
-while read -a var
+if [[ -z "$u" ]]; then
+
+	u=$(tail -1 ram.results | sed 's/#.*//')
+	
+fi
+
+rm -f ${OUT}.calls
+
+for ((f=1; f<u; f++))
 
 	do
 
-	if [[ ! ${var[4]} == *","* ]]; then
+		ref=($(grep "$(printf "^${f}#")" ${OUT}.results | grep "ref" | awk 'function abs(x) {return x<0 ? -x : x}
+		{
+		 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
+		 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
+		 END{
+		 split($1,a,"#");split(a[2],b,":");split(b[2],c,"_");printf b[1]":"c[1]"\t"
+		 if(pre_NA==0){if(pre_sign>=0){var=1}else{var=-1};
+		 printf var*pre_abs_avg/NR"\t0"}else{printf "NA\t"pre_NA};
+		 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
+		 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
+		
+		alt=($(grep "$(printf "^${f}#")" ${OUT}.results | grep "alt" | awk 'function abs(x) {return x<0 ? -x : x}
+		{
+		 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
+		 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
+		 END{
+		 if(pre_NA==0){if(pre_sign>=0){var=1}else{var=-1};
+		 printf var*pre_abs_avg/NR"\t0"}else{printf "NA\t"pre_NA};
+		 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
+		 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
 
-		IFS=':' read -r -a arr <<<"${var[9]}"
+		printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${f}" "${ref[0]}" "${ref[1]}" "${ref[2]}" "${ref[3]}" "${ref[4]}" "${alt[0]}" "${alt[1]}" "${alt[2]}" "${alt[3]}" >> ${OUT}.calls
 
-		printf -v call "%s:%s-%s"  "${var[0]}" "$(( ${var[1]} - ${K} + 1))" "$(( ${var[1]} + ${K} - 2 + ${#var[3]}))"
+		#awk 'function abs(x) {return x<0 ? -x : x} {if (abs((1-abs($8)))-abs(1-abs($9))>0 && abs((1-abs($10)))-abs(1-abs($11))>0) printf "%s\t%.5f\t%.5f\n", $0,abs((1-abs($8)))-abs(1-abs($9)),abs((1-abs($10)))-abs(1-abs($11))}' ram.calls > ram.diff
 
-		ref=($(grep "$(echo $call)" ${OUT}.results | grep "ref" | awk 'function abs(x) {return x<0 ? -x : x} {if($4!="NA"){suma+=$4;avga+=abs($4)}else{suma="NA"};if($5!="NA"){sumb+=$5;avgb+=abs($5)}else{sumb="NA"}}END{if(suma!="NA"){if(suma>0){var=1}else{var=-1};printf var*avga/NR}else{printf "NA"};if(sumb!="NA"){if(sumb>0){var=1}else{var=-1};printf "\t"var*avgb/NR}else{printf "\tNA"}}'))
-		alt=($(grep "$(echo $call)" ${OUT}.results | grep "alt" | awk 'function abs(x) {return x<0 ? -x : x} {if($4!="NA"){suma+=$4;avga+=abs($4)}else{suma="NA"};if($5!="NA"){sumb+=$5;avgb+=abs($5)}else{sumb="NA"}}END{if(suma!="NA"){if(suma>0){var=1}else{var=-1};printf var*avga/NR}else{printf "NA"};if(sumb!="NA"){if(sumb>0){var=1}else{var=-1};printf "\t"var*avgb/NR}else{printf "\tNA"}}'))
-
-		printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${var[0]}" "${var[1]}" "${var[3]}"  "${var[4]}"  "${var[5]}" "${arr[0]}" "${arr[1]}" "${ref[0]}" "${ref[1]}" "${alt[0]}" "${alt[1]}" >> ${OUT}.calls
-
-		awk 'function abs(x) {return x<0 ? -x : x} {if (abs((1-abs($8)))-abs(1-abs($9))>0 && abs((1-abs($10)))-abs(1-abs($11))>0) printf "%s\t%.5f\t%.5f\n", $0,abs((1-abs($8)))-abs(1-abs($9)),abs((1-abs($10)))-abs(1-abs($11))}' ram.calls > ram.diff
-
-	else
-
-		printf '\nComplex variant, skipping.\n\n'
-
-	fi
-
-done< <(bcftools view -H -i 'QUAL>20 && (GT="0/0" || GT="0/1")' $VAR)
+done
