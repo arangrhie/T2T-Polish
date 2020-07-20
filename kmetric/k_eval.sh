@@ -91,7 +91,7 @@ fi
 
 if [[ ! -e ${OUT}.results ]]; then
 
-	bcftools view --threads $((${CPU}-1)) -H -i 'QUAL>20 && (GT="0/0" || GT="0/1")' $VAR > ${RAM}/vars.vcf
+	bcftools view --threads $((${CPU}-1)) -H -i 'QUAL>20 && (GT="0/1" || GT="1/1")' $VAR > ${RAM}/vars.vcf
 	
 	n_vars=$(wc -l ${RAM}/vars.vcf | awk '{print $1}')
 
