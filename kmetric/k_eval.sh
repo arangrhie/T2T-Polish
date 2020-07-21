@@ -83,6 +83,8 @@ RAM=$(mktemp -dt "k_eval.XXXXXXXX" --tmpdir=/run/user/$(id -u))
 printf "Temporary files written to: "
 echo $RAM
 
+rm -f ${OUT}.lookup.table
+
 if [[ -z ${COMB} ]]; then
 
 	COMB=15
@@ -97,6 +99,7 @@ if [[ ! -e ${OUT}.results ]]; then
 
 	a=1
 	u=1
+	h=1
 	STR=1
 
 	while [ $a -le $n_vars ]
@@ -118,8 +121,17 @@ if [[ ! -e ${OUT}.results ]]; then
 		while [[ ! -z "${var}" && $END -gt $STR && $o -le ${COMB} && $a -le $(( $n_vars - 1 )) ]]
 		
 		do
+			
+			CHR=${var[0]}
 				
 			var=($(sed -n "${a}p" < ${RAM}/vars.vcf))
+			
+			if [[ ! ${var[0]} == $CHR ]]; then
+				
+				break
+				
+			fi
+			
 			STR=$(( ${var[1]} - ${K} + 1))
 			
 			if [[ $END -gt $STR && $o -le ${COMB} ]]; then
@@ -189,7 +201,7 @@ if [[ ! -e ${OUT}.results ]]; then
 
 			for ((i=0; i<"${#REF[@]}"; i++)) do printf ">${u}#${chr}:${STR}-${END}_ref_%s\n%s\n" $(($i + 1)) "${REF[$i]}" >> ${RAM}/var.fa; done
 			
-			printf "%s\t%s\n" ${u} $(bcftools view -H ${RAM}/var.vcf | awk '{printf "%s,",$1":"$2}' ) >> lookup.table 
+			printf "%s\t%s\t%s\n" ${u} ${h} $(bcftools view -H ${RAM}/var.vcf | awk '{printf "%s,",$1":"$2}' ) >> ${RAM}/${OUT}.lookup.table 
 
 			printf '\nAlternate sequence:\n\n'
 
@@ -208,6 +220,8 @@ if [[ ! -e ${OUT}.results ]]; then
 			u=$((u+1))
 
 		done
+		
+		h=$((h+1))
 
 	done
 	
@@ -228,15 +242,15 @@ if [[ ! -e ${OUT}.results ]]; then
 	else if($3<$2 && $2!=0 && $2+diff==0){print $0"\t"($2/$3-1)"\tNA"}
 	else {printf "whooops"}
 
-	}' > ${OUT}.results
+	}' > ${OUT}.combined
 
-	awk '{if(NR%2==1) {split($0,var,"_"); if (header!=var[1]) {header=var[1];split(var[1],id,":");split(id[2],coords,"-");printf "%s\t%s\t%s\t%s\t%s\n",substr(header,2),substr(id[1],2),coords[1],coords[2],kmers; kmers=""}}else{kmers=kmers" "$1}}' ${RAM}/var.fa > network.txt
+	awk '{if(NR%2==1) {split($0,var,"_"); if (header!=var[1]) {header=var[1];split(var[1],id,":");split(id[2],coords,"-");printf "%s\t%s\t%s\t%s\t%s\n",substr(header,2),substr(id[1],2),coords[1],coords[2],kmers; kmers=""}}else{kmers=kmers" "$1}}' ${RAM}/var.fa > ${OUT}.kmers.txt
 
 fi
 
 if [[ -z "$u" ]]; then
 
-	u=$(tail -1 ram.results | sed 's/#.*//')
+	u=$(tail -1 ${OUT}.combined | sed 's/#.*//')
 	
 fi
 
@@ -246,7 +260,7 @@ for ((f=1; f<u; f++))
 
 	do
 
-		ref=($(grep "$(printf "^${f}#")" ${OUT}.results | grep "ref" | awk 'function abs(x) {return x<0 ? -x : x}
+		ref=($(grep "$(printf "^${f}#")" ${OUT}.combined | grep "ref" | awk 'function abs(x) {return x<0 ? -x : x}
 		{
 		 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
 		 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
@@ -257,7 +271,7 @@ for ((f=1; f<u; f++))
 		 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
 		 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
 		
-		alt=($(grep "$(printf "^${f}#")" ${OUT}.results | grep "alt" | awk 'function abs(x) {return x<0 ? -x : x}
+		alt=($(grep "$(printf "^${f}#")" ${OUT}.combined | grep "alt" | awk 'function abs(x) {return x<0 ? -x : x}
 		{
 		 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
 		 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
@@ -272,3 +286,5 @@ for ((f=1; f<u; f++))
 		#awk 'function abs(x) {return x<0 ? -x : x} {if (abs((1-abs($8)))-abs(1-abs($9))>0 && abs((1-abs($10)))-abs(1-abs($11))>0) printf "%s\t%.5f\t%.5f\n", $0,abs((1-abs($8)))-abs(1-abs($9)),abs((1-abs($10)))-abs(1-abs($11))}' ram.calls > ram.diff
 
 done
+
+cut -f1,3 ${RAM}/${OUT}.lookup.table | paste ${OUT}.calls - > ${OUT}.results
