@@ -40,10 +40,12 @@ while getopts ":a:v:d:k:p:c:o:t:" opt; do
 	case $opt in
 		a)
 			ASM="$OPTARG"
+			export ASM
 			echo "Assembly: -a $OPTARG"
 			;;
 		v)
 			VAR="$OPTARG"
+			export VAR
         		echo "Variants: -v $OPTARG"
 			;;
 		d)
@@ -52,6 +54,7 @@ while getopts ":a:v:d:k:p:c:o:t:" opt; do
 			;;
 		k)
 			K="$OPTARG"
+			export K
 			echo "Kmer length: -k $OPTARG"
 			;;
 		p)
@@ -79,6 +82,7 @@ while getopts ":a:v:d:k:p:c:o:t:" opt; do
 done
 
 RAM=$(mktemp -dt "k_eval.XXXXXXXX" --tmpdir=/run/user/$(id -u))
+export RAM
 
 printf "Temporary files written to: "
 echo $RAM
@@ -93,7 +97,11 @@ fi
 
 if [[ ! -e ${OUT}.results ]]; then
 
-	bcftools view --threads $((${CPU}-1)) -H -i 'QUAL>20 && (GT="0/1" || GT="1/1")' $VAR > ${RAM}/vars.vcf
+	bcftools view --threads $((${CPU}-1)) $VAR -i 'QUAL>20 && (GT="0/1" || GT="1/1")' -Oz > ${RAM}/filtered.vcf.gz
+	bcftools index -f ${RAM}/filtered.vcf.gz
+	tabix -fp vcf ${RAM}/filtered.vcf.gz
+
+	bcftools view --threads $((${CPU}-1)) -H -i 'QUAL>20 && (GT="0/1" || GT="1/1")' ${RAM}/filtered.vcf.gz > ${RAM}/vars.vcf
 	
 	n_vars=$(wc -l ${RAM}/vars.vcf | awk '{print $1}')
 
@@ -166,57 +174,19 @@ if [[ ! -e ${OUT}.results ]]; then
 	
 			done
 		
-			printf "\n"
-
-			printf "%s\n" "${combination[@]}"
-
-			printf "\n"
-		
 			FIRST=$(echo ${combination[0]} | awk '{print $2}')
 			LAST=$(echo ${combination[-1]} | awk '{print $2}')
 		
 			STR=$(( ${FIRST} - ${K} + 1))
 			END=$(( ${LAST} + ${K} - 2 + ${#var[3]}))
-			chr=$(echo ${combination[0]} | awk '{print $1}')
+			CHR=$(echo ${combination[0]} | awk '{print $1}')
 
 			bcftools view -h $VAR > ${RAM}/var.vcf
 
 			printf "%s\n"  "${combination[@]}" >> ${RAM}/var.vcf
+			
+			printf "%s\t%s\t%s\t%s\t%s\t%s\n" ${u} ${h} ${CHR} ${STR} ${END} $(bcftools view -H ${RAM}/var.vcf | awk '{printf "%s,",$1":"$2}' | sed 's/.$//' ) >> ${RAM}/${OUT}.lookup.table 
 		
-			bcftools view -Oz ${RAM}/var.vcf > ${RAM}/var.vcf.gz
-			bcftools index -f ${RAM}/var.vcf.gz
-			tabix -fp vcf ${RAM}/var.vcf.gz
-
-			samtools faidx ${ASM} ${chr}:${STR}-${END} > ${RAM}/ref.fa
-
-			printf '\nReference sequence:\n\n'
-
-			cat ${RAM}/ref.fa
-
-			printf '\nReference kmers:\n\n'
-
-			REF=($(awk -v k=${K} '{if(NR%2==0) {for(i=1;i<=length($0)-k+1;i++) print substr($0, 0+i, k)}}' ${RAM}/ref.fa))
-
-			paste <(printf "%s\n" "${!REF[@]}" | awk '{print $0+1}') <(printf "%s\n" "${REF[@]}")
-
-			for ((i=0; i<"${#REF[@]}"; i++)) do printf ">${u}#${chr}:${STR}-${END}_ref_%s\n%s\n" $(($i + 1)) "${REF[$i]}" >> ${RAM}/var.fa; done
-			
-			printf "%s\t%s\t%s\n" ${u} ${h} $(bcftools view -H ${RAM}/var.vcf | awk '{printf "%s,",$1":"$2}' ) >> ${RAM}/${OUT}.lookup.table 
-
-			printf '\nAlternate sequence:\n\n'
-
-			cat ${RAM}/ref.fa | bcftools consensus ${RAM}/var.vcf.gz > ${RAM}/alt.fa 2>/dev/null
-
-			cat ${RAM}/alt.fa
-
-			printf '\nAlternate kmers:\n\n'
-
-			ALT=($(awk -v k=${K} '{if(NR%2==0) {for(i=1;i<=length($0)-k+1;i++) print substr($0, 0+i, k)}}' ${RAM}/alt.fa))
-
-			paste <(printf "%s\n" "${!ALT[@]}" | awk '{print $0+1}') <(printf "%s\n" "${ALT[@]}")
-
-			for ((i=0; i<"${#ALT[@]}"; i++)) do printf ">${u}#${chr}:${STR}-${END}_alt_%s\n%s\n" $(($i + 1)) "${ALT[$i]}" >> ${RAM}/var.fa; done
-			
 			u=$((u+1))
 
 		done
@@ -225,15 +195,20 @@ if [[ ! -e ${OUT}.results ]]; then
 
 	done
 	
+	parallel --record-env
+	parallel -a ${RAM}/${OUT}.lookup.table -j ${CPU} -k --env _ --colsep '\t' "sh ../k_eval_parallel.sh {1} {3} {4} {5} {6}" >> ${RAM}/var.fa
+	
 	filename=$(basename -- "${ASM}")
 	filename="${filename%.*}"
 	
+	printf "\n"
+	
 	meryl count k=${K} ${ASM} output ${filename}.meryl
 
-	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ${filename}.meryl | awk '{print $1"\t"($NF+$(NF-2))}' > ${OUT}.asm
-	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ${DB} | awk -v hap=${PEAK} '{COUNT=$NF+$(NF-2); print $1"\t"(COUNT/hap) }' > ${OUT}.read
+	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ${filename}.meryl | awk '{print $1"\t"($NF+$(NF-2))}' > ${RAM}/${OUT}.asm
+	meryl-lookup -dump -memory 200 -sequence ${RAM}/var.fa -mers ${DB} | awk -v hap=${PEAK} '{COUNT=$NF+$(NF-2); print $1"\t"(COUNT/hap) }' > ${RAM}/${OUT}.read
 	
-	cut -f2 ${OUT}.read | paste ${OUT}.asm - | awk '{if (index($1, "ref") != 0) {diff=-1} else {diff=1}; 
+	cut -f2 ${RAM}/${OUT}.read | paste ${RAM}/${OUT}.asm - | awk '{if (index($1, "ref") != 0) {diff=-1} else {diff=1}; 
 	if($3==0) {print $0"\tNA\tNA"}
 	else if($3>=$2 && $2!=0 && $2+diff!=0){print $0"\t"(-1*($3/$2-1))"\t"(-1*($3/($2+diff)-1))}
 	else if($3>=$2 && $2!=0 && $2+diff==0){print $0"\t"(-1*($3/$2-1))"\tNA"}
@@ -242,49 +217,47 @@ if [[ ! -e ${OUT}.results ]]; then
 	else if($3<$2 && $2!=0 && $2+diff==0){print $0"\t"($2/$3-1)"\tNA"}
 	else {printf "whooops"}
 
-	}' > ${OUT}.combined
+	}' > ${RAM}/${OUT}.combined
 
 	awk '{if(NR%2==1) {split($0,var,"_"); if (header!=var[1]) {header=var[1];split(var[1],id,":");split(id[2],coords,"-");printf "%s\t%s\t%s\t%s\t%s\n",substr(header,2),substr(id[1],2),coords[1],coords[2],kmers; kmers=""}}else{kmers=kmers" "$1}}' ${RAM}/var.fa > ${OUT}.kmers.txt
 
-fi
+	if [[ -z "$u" ]]; then
 
-if [[ -z "$u" ]]; then
-
-	u=$(tail -1 ${OUT}.combined | sed 's/#.*//')
+		u=$(tail -1 ${RAM}/${OUT}.combined | sed 's/#.*//')
 	
-fi
+	fi
 
-rm -f ${OUT}.calls
+	for ((f=1; f<u; f++))
 
-for ((f=1; f<u; f++))
+		do
 
-	do
-
-		ref=($(grep "$(printf "^${f}#")" ${OUT}.combined | grep "ref" | awk 'function abs(x) {return x<0 ? -x : x}
-		{
-		 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
-		 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
-		 END{
-		 split($1,a,"#");split(a[2],b,":");split(b[2],c,"_");printf b[1]":"c[1]"\t"
-		 if(pre_NA==0){if(pre_sign>=0){var=1}else{var=-1};
-		 printf var*pre_abs_avg/NR"\t0"}else{printf "NA\t"pre_NA};
-		 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
-		 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
+			ref=($(grep "$(printf "^${f}#")" ${RAM}/${OUT}.combined | grep "ref" | awk 'function abs(x) {return x<0 ? -x : x}
+			{
+			 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
+			 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
+			 END{
+			 split($1,a,"#");split(a[2],b,":");split(b[2],c,"_");printf b[1]":"c[1]"\t"
+			 if(pre_NA==0){if(pre_sign>=0){var=1}else{var=-1};
+			 printf var*pre_abs_avg/NR"\t0"}else{printf "NA\t"pre_NA};
+			 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
+			 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
 		
-		alt=($(grep "$(printf "^${f}#")" ${OUT}.combined | grep "alt" | awk 'function abs(x) {return x<0 ? -x : x}
-		{
-		 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
-		 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
-		 END{
-		 if(pre_NA==0){if(pre_sign>=0){var=1}else{var=-1};
-		 printf var*pre_abs_avg/NR"\t0"}else{printf "NA\t"pre_NA};
-		 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
-		 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
+			alt=($(grep "$(printf "^${f}#")" ${RAM}/${OUT}.combined | grep "alt" | awk 'function abs(x) {return x<0 ? -x : x}
+			{
+			 if($4!="NA"){pre_sign+=$4;pre_abs_avg+=abs($4)}else{pre_NA+=1};
+			 if($5!="NA"){pst_sign+=$5;pst_abs_avg+=abs($5)}else{pst_NA+=1}}
+			 END{
+			 if(pre_NA==0){if(pre_sign>=0){var=1}else{var=-1};
+			 printf var*pre_abs_avg/NR"\t0"}else{printf "NA\t"pre_NA};
+			 if(pst_NA==0){if(pst_sign>=0){var=1}else{var=-1};
+			 printf "\t"var*pst_abs_avg/NR"\t0"}else{printf "\tNA\t"pst_NA}}'))
 
-		printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${f}" "${ref[0]}" "${ref[1]}" "${ref[2]}" "${ref[3]}" "${ref[4]}" "${alt[0]}" "${alt[1]}" "${alt[2]}" "${alt[3]}" >> ${OUT}.calls
+			printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${f}" "${ref[0]}" "${ref[1]}" "${ref[2]}" "${ref[3]}" "${ref[4]}" "${alt[0]}" "${alt[1]}" "${alt[2]}" "${alt[3]}" >> ${RAM}/${OUT}.calls
 
-		#awk 'function abs(x) {return x<0 ? -x : x} {if (abs((1-abs($8)))-abs(1-abs($9))>0 && abs((1-abs($10)))-abs(1-abs($11))>0) printf "%s\t%.5f\t%.5f\n", $0,abs((1-abs($8)))-abs(1-abs($9)),abs((1-abs($10)))-abs(1-abs($11))}' ram.calls > ram.diff
+			#awk 'function abs(x) {return x<0 ? -x : x} {if (abs((1-abs($8)))-abs(1-abs($9))>0 && abs((1-abs($10)))-abs(1-abs($11))>0) printf "%s\t%.5f\t%.5f\n", $0,abs((1-abs($8)))-abs(1-abs($9)),abs((1-abs($10)))-abs(1-abs($11))}' ram.calls > ram.diff
 
-done
+	done
 
-cut -f1,3 ${RAM}/${OUT}.lookup.table | paste ${OUT}.calls - > ${OUT}.results
+	cut -f1,2,6 ${RAM}/${OUT}.lookup.table | paste ${RAM}/${OUT}.calls - > ${OUT}.results
+
+fi
