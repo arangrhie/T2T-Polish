@@ -13,5 +13,9 @@ awk -F "\t" 'function abs(x) {return x<0 ? -x : x}
 		 trend=$7;false=$4;id=$2;var=$9
 	}' $2 | sed 's/  /\n/g' | sed '/^$/d' | tr ' ' '\t' > ${2%.*}_vars.vcf
 
-cat ${2%.*}_header.vcf ${2%.*}_vars.vcf > ${2%.*}.vcf
+cat ${2%.*}_header.vcf ${2%.*}_vars.vcf > ${2%.*}.merfin.vcf
 rm ${2%.*}_header.vcf ${2%.*}_vars.vcf
+
+bcftools view -Oz ${2%.*}.merfin.vcf > ${2%.*}.merfin.vcf.gz
+bcftools index ${2%.*}.merfin.vcf.gz
+bcftools consensus -f $3 -H 1 ${2%.*}.merfin.vcf.gz > ${3%.*}.polished.fasta
