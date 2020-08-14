@@ -11,7 +11,7 @@ if [[ "$#" -lt 5 ]]; then
 	echo -e "\tsingle.meryl: single-copy marker meryl db"
 	echo -e "\tarray_len: to how many array jobs to submit"
 	echo -e "\t[len_filt]: length filter. use LEN_FILT by default."
-	echo 0
+	exit 0
 fi
 
 bam=$1
@@ -27,7 +27,7 @@ mkdir -p logs
 cpus=4
 mem=12g
 partition=norm
-walltime=1-0
+walltime=2-0
 path=`pwd`
 
 # variables
