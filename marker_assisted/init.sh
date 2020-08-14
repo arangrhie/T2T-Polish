@@ -90,14 +90,19 @@ else
 		echo
 	fi
 
-	if [ ! -s rid.list ]; then
+	if [ ! -s $target.rid.list ]; then
 		echo "Get unique read ids"
-		samtools view -O sam -@$cores $target.srt_id.bam | awk -v rid="a" '{if (rid!=$1) {print $1; rid=$1}}' > rid.list
+		samtools view -O sam -@$cores $target.srt_id.bam | awk -v rid="a" '{if (rid!=$1) {print $1; rid=$1}}' > $target.rid.list
 	fi
-	RID_TOTAL=`wc -l rid.list | awk '{print $1}'`
-	echo $RID_TOTAL > RID_TOTAL
+
+	if [ ! -s $target.RID_TOTAL ]; then
+		RID_TOTAL=`wc -l $target.rid.list | awk '{print $1}'`
+		echo $RID_TOTAL > $target.RID_TOTAL
+	else
+		RID_TOTAL=`cat $target.RID_TOTAL`
+	fi
 	
-	echo "Total num. of unique reads aligned to $target: $RID_TOTAL"
+	echo "Total num. of unique reads aligned to $target: $target.$RID_TOTAL"
 
 	EXPECTED=$(($RID_TOTAL/$NUM_READS_PER_FILE+1))
 	FOUND=`ls split.$target.srt_id.* 2> /dev/null | wc -l`
@@ -109,16 +114,16 @@ else
 			echo "$RID_TOTAL is less than $NUM_READS_PER_FILE : No need to split"
 			samtools view -O sam -@$cores $target.srt_id.bam > split.$target.srt_id.1
 		else
-			echo "Collect every $NUM_READS_PER_FILE read id to rid.ith"
+			echo "Collect every $NUM_READS_PER_FILE read id to $target.rid.ith"
 
-			if [[ -s rid.ith ]]; then
+			if [[ -s $target.rid.ith ]]; then
 				echo "*** Found rid.ith. Removing it. ***"
-				rm rid.ith
+				rm $target.rid.ith
 			fi
-			awk -v NUM_READS_PER_FILE=$NUM_READS_PER_FILE 'NR%NUM_READS_PER_FILE == 0 {print $0}' rid.list >> rid.ith
+			awk -v NUM_READS_PER_FILE=$NUM_READS_PER_FILE 'NR%NUM_READS_PER_FILE == 0 {print $0}' $target.rid.list >> $target.rid.ith
 
 			echo "Split $target.srt_id.bam to $EXPECTED files"
-			samtools view -@$cores $target.srt_id.bam | java -jar -Xmx4g $SCRIPT/src/txtSplitByFile.jar - rid.ith 1 split.$target.srt_id
+			samtools view -@$cores $target.srt_id.bam | java -jar -Xmx4g $SCRIPT/src/txtSplitByFile.jar - $target.rid.ith 1 split.$target.srt_id
 		fi
 	fi
 	echo
