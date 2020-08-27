@@ -7,10 +7,10 @@ na.zero <- function (x) {
 }
 
 histfile <- "mBalMus1.k21.hist"
-kmer_prof <- read.csv(file=histfile,sep="\t", header=FALSE)
+kmer_hist <- read.csv(file=histfile,sep="\t", header=FALSE)
 
-x = kmer_prof[[1]]
-y = kmer_prof[[2]]
+x = kmer_hist[[1]]
+y = kmer_hist[[2]]
 
 model_sum=summary(model_4peaks[[1]])
 
@@ -27,19 +27,13 @@ amd   = (md[1]   + md[2])   / 2
 akcov = (kcov[1] + kcov[2]) / 2
 adups = (dups[1] + dups[2]) / 2
 
-unique_hist <- (2 * (1 - amd) * (1 - (1 - ahet)^k))                         * dnbinom(x, size = akcov     / adups, mu = akcov)     * amlen +
-  ((amd * (1 - (1 - ahet)^k)^2) + (1 - amd) * ((1 - ahet)^k))  * dnbinom(x, size = akcov * 2 / adups, mu = akcov * 2) * amlen 
+unique_hist <- (2 * (1 - amd) * (1 - (1 - ahet)^k))                         * dnbinom(x, size = akcov     / (adups/sqrt(1)), mu = akcov)     * amlen +
+  ((amd * (1 - (1 - ahet)^k)^2) + (1 - amd) * ((1 - ahet)^k))  * dnbinom(x, size = akcov * 2 / (adups/sqrt(2)), mu = akcov * 2) * amlen 
 
 one_hist <- ((2*(1-amd)*(1-(1-ahet)^k)) + (2*amd*(1-(1-ahet)^k)^2) + (2*amd*((1-ahet)^k)*(1-(1-ahet)^k))) * dnbinom(x, size = akcov   / adups, mu = akcov)     * amlen   
 two_hist <- (((1-amd)*((1-ahet)^k)) + (amd*(1-(1-ahet)^k)^2))                                             * dnbinom(x, size = akcov*2 / adups, mu = akcov * 2) * amlen
 thr_hist <- (2*amd*((1-ahet)^k)*(1-(1-ahet)^k))                                                           * dnbinom(x, size = akcov*3 / adups, mu = akcov * 3) * amlen
-fou_hist <- (amd*(1-ahet)^(2*k))                                                                          * dnbinom(x, size = akcov*4 / adups, mu = akcov * 4) * amlen
-
-total_kmers = sum(as.numeric(x*y))
-unique_kmers = sum(as.numeric(x*unique_hist))
-total_error_kmers = sum(as.numeric(error_kmers * x[1:error_xcutoff_ind]))
-repeat_kmers = total_kmers - unique_kmers - total_error_kmers
-repeat_len=repeat_kmers/(2*kcov)
+fou_hist <- (amd*(1-ahet)^(2*k))                                                                         * dnbinom(x, size = akcov*4 / adups, mu = akcov * 4) * amlen
 
 pred=predict(model_4peaks[[1]], newdata=data.frame(x))
 
@@ -54,6 +48,24 @@ error_kmers = pmax(error_kmers, 1e-10)
 repeat_kmers = y[1:length(y)] - pred[1:length(y)]
 repeat_kmers <- c(rep(0,akcov*5-1),repeat_kmers[ceiling(akcov*5)[[1]]:length(repeat_kmers)])
 
+total_kmers = sum(as.numeric(x*y))
+unique_kmers = sum(as.numeric(x*unique_hist))
+total_error_kmers = sum(as.numeric(error_kmers * x[1:error_xcutoff_ind]))
+repeat_kmers = total_kmers - unique_kmers - total_error_kmers
+repeat_len=repeat_kmers/(2*kcov)
+
+plot(kmer_hist,type="n", main="GenomeScope Profile\n", xlab="Coverage", ylab="Frequency",xlim=c(0,200), ylim=c(0,50000000))
+
+points(kmer_hist, type="h", col=COLOR_HIST, lwd=2)
+lines(error_kmers, col="black")
+lines(one_hist, col="red")
+lines(two_hist, col="green")
+lines(thr_hist, col="purple")
+lines(fou_hist, col="blue")
+lines(repeat_kmers, col="orange")
+
+dev.off()
+
 zer_hist_PMF <- error_kmers/sum(y)
 zer_hist_PMF[zer_hist_PMF<0] <- 0
 one_hist_PMF <- one_hist/sum(y)
@@ -62,12 +74,9 @@ thr_hist_PMF <- thr_hist/sum(y)
 fou_hist_PMF <- fou_hist/sum(y)
 rep_hist_PMF <- repeat_kmers/sum(y)
 
-dev.off()
-plot.new()
+plot(kmer_hist,type="n", main="GenomeScope Profile\n", xlab="Coverage", ylab="Probability",xlim=c(0,200), ylim=c(0,0.001))
 
-plot(kmer_prof,type="n", main="GenomeScope Profile\n", xlab="Coverage", ylab="Probability",xlim=c(0,200), ylim=c(0,0.001))
-
-lines(zer_hist_PMF, lwd=1, col="black")
+lines(zer_hist_PMF, col="black")
 lines(one_hist_PMF, col="red")
 lines(two_hist_PMF, col="green")
 lines(thr_hist_PMF, col="purple")
@@ -92,7 +101,7 @@ for (i in peaks[peaks >= start & peaks <= start+step]) {
   
   #lines(dnorm(x, mean = i, sd = adups*i/sqrt(i), log = FALSE) * (y[i]*i / repeat_kmers) * repeat_len[[1]], col=cols[i], lwd=1, lty=1)
   
-  new <- dnorm(x, mean = i, sd = adups*i/sqrt(i), log = FALSE) * (y[i]*i / repeat_kmers)
+  new <- dnorm(x, mean = i, sd = adups*y[i]/sqrt(i), log = FALSE) * (y[i]*i / repeat_kmers)
   
   cat("\nmax:",max(new), ", index:", which.max(new))
   
@@ -102,6 +111,8 @@ for (i in peaks[peaks >= start & peaks <= start+step]) {
 }
 
 lines(complete, col="red", lwd=1, lty=1)
+
+dev.off()
 
 lookup_table <- NULL
 
