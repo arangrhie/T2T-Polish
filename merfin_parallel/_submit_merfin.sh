@@ -19,10 +19,12 @@ elif [ $1 == "-h" ]; then
 	Required inputs are:
 	-a	assembly file
 	-v 	variant file
-	-d	meryl db
+	-d	assmebly meryl db
+	-r	read meryl db
 	-p	haploid peak
 	-q	QUAL variant filter
 	-o	output prefix
+	-n	number of nodes
 	-t	number of threads
 EOF
 
@@ -92,7 +94,7 @@ echo $RAM
 printf "\nScript directory: "
 echo ${BASH_SOURCE%/*}
 
-bcftools view --threads $((${CPU}-1)) $VAR -i "QUAL>${QUAL} && (GT=\"0/1\" || GT=\"1/1\")" -Oz > ${RAM}/filtered.vcf.gz
+bcftools view --threads $((${CPU}-1)) $VAR -Oz > ${RAM}/filtered.vcf.gz
 bcftools index -f ${RAM}/filtered.vcf.gz
 tabix -fp vcf ${RAM}/filtered.vcf.gz
 
@@ -102,17 +104,20 @@ n_vars=$(awk '{sum+=$3}END{print sum}' ${RAM}/${VAR%.*}_chrs_stats.txt)
 
 awk -v n_vars=${n_vars} -v nodes=${NODE} 'BEGIN{pass=int(n_vars/nodes)}{if(sum>=pass){sum=0;printf "%s\n",chr;chr=""};sum+=$3;chr=chr","$1}END{printf "%s\n",chr}' ${RAM}/${VAR%.*}_chrs_stats.txt > ${RAM}/${VAR%.*}_chrs.txt
 
-mkdir -p bcfs
+mkdir -p vcfs
 
-cat ${RAM}/${VAR%.*}_chrs.txt | parallel -j ${CPU} "bcftools view -Oz ${RAM}/filtered.vcf.gz -r {} > bcfs/${VAR%.*}_{#}.bcf"
+cat ${RAM}/${VAR%.*}_chrs.txt | parallel -j ${CPU} "bcftools view -Ov ${RAM}/filtered.vcf.gz -r {} > vcfs/${VAR%.*}_{#}.vcf"
 
 mkdir -p merfin
 mkdir -p logs
 
-for fl in $(ls bcfs);
+for fl in $(ls vcfs);
 do
+
+	filename=$(basename -- "${fl}")
+	out="${filename%.*}"
 	
 	log=logs/${VAR%.*}.%A.log
-	sbatch --partition=vgl --nice=10000 --cpus-per-task=${CPU} --error=$log --output=$log merfin.sh $ASM $ADB $RDB $PEAK "bcfs/${fl}"
+	sbatch --partition=vgl --nice=10000 --cpus-per-task=${CPU} --error=$log --output=$log merfin.sh $ASM $ADB $RDB $PEAK "vcfs/${fl}" $out
 
 done
