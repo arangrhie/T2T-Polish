@@ -8,7 +8,7 @@ awk 'BEGIN{print "track autoScale=on"}{if($1!=chr){chr=$1; counter=1; print "var
 ```
 From merfin dump output (0-based) including missing (note: Wig is 1-based):
 ```
-awk 'BEGIN{print "track autoScale=on"}{if($1!=chr){chr=$1; counter=1; print "variableStep chrom="chr" span=1"};if($3!=0){printf counter"\t"$5"\n"};counter+=1}' t2t-chm13.20200904 > t2t-chm13.20200904.Wig
+awk 'BEGIN{print "track autoScale=on"}{if($1!=chr){chr=$1; print "variableStep chrom="chr" span=1"};if($3!=0){printf $2+1"\t"$5"\n"}}' t2t-chm13.20200904 > t2t-chm13.20200904.illumina.Wig```
 ```
 Convert to bigWig
 ```
