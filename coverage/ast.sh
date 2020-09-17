@@ -2,7 +2,9 @@
 
 if [ -z $1 ]; then
 	echo "Usage: ast.sh <platform> [mean_cov]"
-	exit -1
+  echo "  Generates .wig and various .bed files supporting or low / high coverage regions"
+  echo "  Requires .paf file(s) in the same dir"
+  exit -1
 fi
 
 platform=$1
