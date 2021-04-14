@@ -93,7 +93,6 @@ else
 		echo "python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam"
 		python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam
 		samtools view -@$cores -O cram -o $target.markers.cram --reference=$asm $target.markers.sam
-		$tools/IGVTools/igvtools count $target.markers.cram $target.markers.tdf $asm.fai
 	fi
 	echo
 
@@ -124,7 +123,6 @@ fi
 echo "
 # generate $target.markersandlength.cram"
 samtools view -@${cores} -O cram -o $target.markersandlength.cram --reference=$asm $target.filtered.sam
-$tools/IGVTools/igvtools count $target.markersandlength.cram $target.markersandlength.tdf $asm.fai
 
 echo "
 # Index"
