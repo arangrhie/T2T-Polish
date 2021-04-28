@@ -13,15 +13,29 @@ To generate one, generate a k-mer counting database with `meryl count` and filte
 
 Depending on the purpose, this marker set can be generically defined.
 
-As the polishing team aims to generate the most conservative alignment set to validate structural correctness, we define markers as single-copy k-mers, occurring in the expected single-copy range from the read set and unique in the assembly.
+As the polishing team aims to generate the most conservative alignment set to validate structural correctness, we define markers as single-copy k-mers, occurring in the expected single-copy range from the PCR-free Illumina read set and unique in the assembly.
+
+Note the "single-copy range" is different from the conventional definition of single-copy k-mer multiplicity found in a genome.
+Here, we refer to the k-mers that are expected to be found 'globaly once' in a pseudo-haploid assembly as "single-copy",
+where k-mers from the heterozygous (1-copy in the genome) and homozygous (2-copy in the genome) regions are expected to be found once.
+
+As CHM13 haplotypes are nearly identical, we found almost no strong signal for the heterozygous 1-copy k-mer peak.
+This makes the first visible peak observed in the Illumina k-mer set become the 2-copy peak.
+The second peak was nearly doubling the multiplicity found from what was found in the first peak, making it the 4-copy peak.
+
+When evaluating read alignments at heterozygous regions (we still found a few heterozygous sites), 
+we confirmed the heterozygous regions matched the expected haploid multiplicity (half the first peak multiplicity), 
+and the average read depth (usually called haploid genome coverage) matched the multiplicity of the first peak.
+
+Using this information, we set the upper boundary of the single-copy k-mer multiplicity as the 2.5-copy multiplicity, which can be inferred from the first (2-copy) and second (4-copy) peaks.
 
 Markers were generated from Illumina PCR-Free WGS 21-mer counts (IlluminaPCRfree.meryl) and 21-mers of an assembly (20200727.meryl) using the following command lines:
 ```
 # Get k-mers with multiplicity > 42, filter out erroneous k-mers
 meryl greater-than 42 IlluminaPCRfree.meryl output IlluminaPCRfree.gt42.meryl
 
-# Get k-mers with multiplicity < 133, filter out >1.5 copy k-mers
-meryl less-than 133 IlluminaPCRfree.gt42.meryl output IlluminaPCRfree.gt49.lt133.meryl
+# Get k-mers with multiplicity < 133, filter out > 2.5 copy k-mers (multiplicity at first peak + 1/4 * (second - first peak))
+meryl less-than 133 IlluminaPCRfree.gt42.meryl output IlluminaPCRfree.gt42.lt133.meryl
 # IlluminaPCRfree.gt42.lt133.meryl is available as IlluminaPCRfree.single.meryl
 
 # Get unique k-mers in the assembly
