@@ -130,4 +130,4 @@ samtools index $target.markersandlength.cram
 
 echo "
 # Cleanup"
-rm $target.filtered.sam $target.sam $target.markers.sam $target.bam split.$target.srt_id.* $target.align* $target.filteredList
+rm -r $target.filtered.sam $target.sam $target.markers.sam $target.bam split.$target.srt_id.* $target.align* $target.filteredList $target.meryl $target.single.meryl $target.fa $target.fa.fai $target.header

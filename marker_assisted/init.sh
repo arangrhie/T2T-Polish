@@ -49,6 +49,7 @@ fi
 
 SCRIPT=`cat SCRIPT`
 NUM_READS_PER_FILE=10000	# Increase or decrease depending on the read set
+#NUM_READS_PER_FILE=100000	# Increase or decrease depending on the read set - for illumina reads
 
 echo "Extract $target aslignments from $alignment, split by $NUM_READS_PER_FILE unique read ids"
 echo
@@ -135,3 +136,5 @@ else
 	echo
 fi
 
+echo "Clean up"
+rm $target.srt_id.bam
