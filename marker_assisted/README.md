@@ -1,7 +1,7 @@
 # Marker assisted read filtering
 
 ## Requires
-* meryl-1.0
+* meryl-1.3
 * python 2.7.3
 * java
 * samtools
