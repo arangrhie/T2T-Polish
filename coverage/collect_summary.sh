@@ -95,26 +95,36 @@ collect_coverage() {
   out_prefix=$2
   WINDOW=$3
   platform=$4
-  java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $in_paf "$platform" $WINDOW > $out_prefix.cov.wig
+  perstrand=$5
 
-	cut -f1-11 $in_paf |\
-	awk '$5=="+"' |\
-	java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (+)" $WINDOW > $out_prefix.cov.p.wig
+  if [[ $perstrand -eq 1 ]]; then
+    cut -f1-11 $in_paf |\
+    awk '$5=="+"' |\
+    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (+)" $WINDOW > $out_prefix.cov.p.wig
 
-	cut -f1-11 $in_paf |\
-	awk '$5=="-"' |\
-	java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (-)" $WINDOW > $out_prefix.cov.n.wig
+    cut -f1-11 $in_paf |\
+    awk '$5=="-"' |\
+    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (-)" $WINDOW > $out_prefix.cov.n.wig
+  else
+    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $in_paf "$platform" $WINDOW > $out_prefix.cov.wig
+  fi
 }
 
 
-# Collect tracks
+# Collect read-length, mq, idy tracks
 collect_stat $pri.paf $pri 10000
 
 # Per strand stat tracks
 collect_stat $pri.paf $pri 10000 "$name" 1
 
+# Clipped
 collect_clipped $pri.paf $pri.w1k 1024 "$name"
+
+# Coverage
 collect_coverage $pri.paf $pri 1024 "$name"
+
+# Per strand coverage
+collect_coverage $pri.paf $pri 1024 "$name" 1
 
 
 
