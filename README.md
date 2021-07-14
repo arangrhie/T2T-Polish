@@ -10,7 +10,11 @@ This repository is a shared code base from the polishing team, created over the 
 
 ## Related external links
 * [homopolymer and microsatellite run length](https://github.com/UCSC-nanopore-cgl/margin)
-* [script to merge vcfs from Illumina/HiFi and ONT](https://github.com/kishwarshafin/T2T_polishing_scripts/blob/master/telomere_variants/generate_telomere_edits.py)
+
+### Variant call refinements and formatting
+* [Irys](https://github.com/mkirsche/Iris): Refine insertion and deletion sequences
+* [Merge vcfs from Illumina/HiFi and ONT](https://github.com/kishwarshafin/T2T_polishing_scripts/blob/master/polishing_merge_script/vcf_merge_t2t.py)
+* [Generate telomere edits](https://github.com/kishwarshafin/T2T_polishing_scripts/blob/master/telomere_variants/generate_telomere_edits.py)
 
 ### Repeat aware alignment
 * [Winnowmap](https://github.com/marbl/Winnowmap)
