@@ -10,6 +10,18 @@ This repository is a shared code base from the polishing team, created over the 
 
 ## Related external links
 * [homopolymer and microsatellite run length](https://github.com/UCSC-nanopore-cgl/margin)
+You can generate the run-length matrix using `runLengthMatrix` executable available with Margin:
+```bash
+./runLengthMatrix \
+<BAM> \
+<REF> \
+base_params.json \ 
+-t <THREADS> \
+-l <highest_runlength_allowed> \
+-o OUTPUT_DIR/OUTPUT_PREFIX
+
+base_params.json = https://github.com/UCSC-nanopore-cgl/margin/blob/master/params/base_params.json
+```
 
 ### Variant call refinements and formatting
 * [Irys](https://github.com/mkirsche/Iris): Refine insertion and deletion sequences
