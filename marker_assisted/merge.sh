@@ -21,12 +21,12 @@
 ######################################################################
 
 if [[ "$#" -lt 4 ]]; then
-	echo "Usage: single_copy_filter.sh alignment target asm marker.meryl [len_filt]"
+	echo "Usage: merge.sh alignment target asm marker.meryl [len_filt]"
 	echo
 	echo "Filters alignment based on single-copy kmers"
 	echo -e "\talignment: input bam or cram file, containing *only* target region (chr)."
 	echo -e "\ttarget: target region (chr) to process"
-	echo -e "\tasm: target fasta file"
+	echo -e "\tasm: entire fasta file for the cram reference"
 	echo -e "\tmarker.meryl: meryl db containing marker kmers. This scripts generates chr specific markers."
 	echo -e "\tlen_filt: length filter in kb. Read from LEN_FILT. OPTIONAL"
 	exit -1
