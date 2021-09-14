@@ -46,11 +46,11 @@ if [ x$cores == "x" ]; then
 fi
 
 if [[ -z $i ]]; then
-	if [[ -z $5 ]]; then
+	if [[ -z $3 ]]; then
 		echo "No job array id provided. Submit through a job array or set [arr_id]"
 		exit -1
 	fi
-	i=$4
+	i=$3
 fi
 
 SCRIPT=`cat SCRIPT`
