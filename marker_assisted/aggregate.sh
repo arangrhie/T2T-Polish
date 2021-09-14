@@ -24,6 +24,6 @@ aggregate() {
 	java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $out.$prefix.paf "$out" 1024 > $out.$prefix.cov.wig
 }
 
-aggregate markersandlength $asm $out
-aggregate markers $asm $out
+aggregate markersandlength $out
+aggregate markers $out
 
