@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Usage: ./sam2paf.sh in.bam out.paf"
+echo "Usage: ./sam2paf.sh in.bam out.paf [name]"
 
 if [[ "$#" -lt 2 ]]; then
   echo "No input and output file provied."
@@ -27,3 +27,15 @@ else
   $tools/k8/k8 /usr/local/apps/minimap2/2.17/misc/paftools.js sam2paf $1 | cut -f1-16 - > $2
 
 fi
+
+out_prefix=`echo $2 | sed 's/.paf//g'`
+name=$3
+
+if [[ -z $name ]]; then
+  echo "No track name provided. Stopping here."
+  exit 0
+fi
+
+echo "
+java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $2 "$name" 1024 > $out_prefix.cov.wig"
+java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $2 "$name" 1024 > $out_prefix.cov.wig
