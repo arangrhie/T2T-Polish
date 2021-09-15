@@ -24,12 +24,12 @@ mkdir -p logs
 if ! [[ -s repetitive_k15.txt ]]; then
   cpus=12
   mem=24g
-  name=init.$prefix
-  script=$PIPELINE/init.sh
-  args="$ref"
   partition=quick
   walltime=30:00
+  name=init.$prefix
   log=logs/$name.%A.log
+  script=$PIPELINE/init.sh
+  args="$ref"
 
   echo "
   sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
@@ -41,31 +41,29 @@ fi
 
 cpus=24
 mem=60g
-name=map.$prefix
-script=$PIPELINE/map.sh
-args="$ref $map $wm_opt"
 partition=norm
 walltime=2-0
+name=map.$prefix
+log=logs/$name.%A_%a.log
+script=$PIPELINE/map.sh
+args="$ref $map $wm_opt"
 
 LEN=`wc -l input.fofn | awk '{print $1}'`
-
-extra="$extra --array=1-$LEN" # include the init.jid
-log=logs/$name.%A_%a.log
+extra="$extra --array=1-$LEN" # include job dependency to init.jid
 
 echo "\
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > map.jid
 
-jid=`cat map.jid`
-
 cpus=24
 mem=60g
+partition=norm
+walltime=1-0
 name=merge.$prefix
 script=$PIPELINE/merge.sh
 args="$prefix"
-partition=norm
-walltime=1-0
-path=`pwd`
+
+jid=`cat map.jid`
 extra="--dependency=afterok:$jid"
 log=logs/$name.%A.log
 
@@ -73,17 +71,28 @@ echo "\
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > merge.jid
 
+cpus=12
+mem=8g
+name=filt.$prefix
+logs=logs/$name.%A.log
+script=$PIPELINE/filt.sh
+args="$prefix.bam"
+
 jid=`cat merge.jid`
 extra="--dependency=afterok:$jid"
+echo "\
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > filt.jid
 
-sh ~/codes/_submit_norm.sh 12 32g tdf.$prefix $tools/IGVTools/to_tdf.sh "$prefix.bam $ref" $extra
-
-sh ~/codes/_submit_norm.sh 12 8g filt.$prefix $PIPELINE/filt.sh $prefix.bam $extra > filt.jid
+name=sam2paf.$prefix
+logs=logs/$name.%A.log
+script=$PIPELINE/../coverage/sam2paf.sh
+args="$prefix.pri.bam $prefix.pri.paf"
 
 jid=`tail -n1 filt.jid`
 extra="--dependency=afterok:$jid"
 
-sh ~/codes/_submit_norm.sh 12 32g tdf.$prefix.pri $tools/IGVTools/to_tdf.sh "$prefix.pri.bam $ref" $extra
-
-sh ~/codes/_submit_norm.sh 12 8g sam2paf.$prefix $PIPELINE/../coverage/sam2paf.sh "$prefix.pri.bam $prefix.pri.paf" $extra
+echo "\
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args
 
