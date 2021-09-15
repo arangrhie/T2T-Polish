@@ -20,40 +20,40 @@ collect_stat() {
   if [[ "$perstrand" -eq 1 ]]; then
 # Read length
     awk '$5=="+"' $in_paf |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Len (+)" $WINDOW 2 $out_prefix.readLen.p
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Len (+)" $WINDOW 2 $out_prefix.readLen.p
 
     awk '$5=="-"' $in_paf |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Len (-)" $WINDOW 2 $out_prefix.readLen.n
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Len (-)" $WINDOW 2 $out_prefix.readLen.n
 
 # MQ
     awk '$5=="+"' $in_paf |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform MQ (+)" $WINDOW 12 $out_prefix.mq.p
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform MQ (+)" $WINDOW 12 $out_prefix.mq.p
 
     awk '$5=="-"' $in_paf |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform MQ (-)" $WINDOW 12 $out_prefix.mq.n
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform MQ (-)" $WINDOW 12 $out_prefix.mq.n
 
 # Idy
     cut -f1-11 $in_paf |\
     awk '$5=="+" {print $0"\t"100*$10/$11}' - |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Idy (+)" $WINDOW 12 $out_prefix.idy.p
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Idy (+)" $WINDOW 12 $out_prefix.idy.p
 
     cut -f1-11 $in_paf |\
     awk '$5=="-" {print $0"\t"100*$10/$11}' - |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Idy (-)" $WINDOW 12 $out_prefix.idy.n
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Idy (-)" $WINDOW 12 $out_prefix.idy.n
 
   else
     cat $in_paf |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Len" $WINDOW 2 $out_prefix.len
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Len" $WINDOW 2 $out_prefix.len
 
     cat $in_paf |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform MQ" $WINDOW 12 $out_prefix.mq
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform MQ" $WINDOW 12 $out_prefix.mq
   
     cut -f1-11 $in_paf |\
-		awk '{print $0"\t"100*$10/$11}' - |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Idy" $WINDOW 12 $out_prefix.idy
+    awk '{print $0"\t"100*$10/$11}' - |\
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToMinAvgMedMaxWig.jar - "$platform Idy" $WINDOW 12 $out_prefix.idy
 
 # Strand
-    java -jar -Xmx2g $tools/T2T-Polish/paf_util/pafToStrandedWig.jar $in_paf "$platform +/all" $WINDOW norm > $out_prefix.strand.wig
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToStrandedWig.jar $in_paf "$platform +/all" $WINDOW norm > $out_prefix.strand.wig
   fi
 
 }
@@ -86,7 +86,7 @@ collect_clipped() {
 
     cut -f1-11 $in_paf |\
     awk '$5=="-" {print $0"\t"100*$10/$11}' - |\
-		java -jar -Xmx3g $tools/T2T-Polish/paf_util/pafToClippedWig.jar - "$platform Clipped -" $WINDOW abs 100 > $out_prefix.n.clip_abs.wig
+    java -jar -Xmx3g $tools/T2T-Polish/paf_util/pafToClippedWig.jar - "$platform Clipped -" $WINDOW abs 100 > $out_prefix.n.clip_abs.wig
   fi
 }
 
@@ -100,13 +100,13 @@ collect_coverage() {
   if [[ $perstrand -eq 1 ]]; then
     cut -f1-11 $in_paf |\
     awk '$5=="+"' |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (+)" $WINDOW > $out_prefix.cov.p.wig
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (+)" $WINDOW > $out_prefix.cov.p.wig
 
     cut -f1-11 $in_paf |\
     awk '$5=="-"' |\
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (-)" $WINDOW > $out_prefix.cov.n.wig
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToCovWig.jar - "$platform (-)" $WINDOW > $out_prefix.cov.n.wig
   else
-    java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $in_paf "$platform" $WINDOW > $out_prefix.cov.wig
+    java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToCovWig.jar $in_paf "$platform" $WINDOW > $out_prefix.cov.wig
   fi
 }
 
