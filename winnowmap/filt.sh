@@ -14,6 +14,7 @@ echo "
 samtools view -F0x104 -@$SLURM_CPUS_PER_TASK -hb $in > $out"
 samtools view -F0x104 -@$SLURM_CPUS_PER_TASK -hb $in > $out
 
+echo "
+samtools index $out"
 samtools index $out
-
 
