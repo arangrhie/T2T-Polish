@@ -1,11 +1,10 @@
 # Marker assisted read filtering
 
 ## Requires
-* meryl-1.3
-* python 2.7.3
+* [meryl-1.3](https://github.com/marbl/meryl)
+* python 2.7.3 or higher
 * java
 * samtools
-* IGVtools (for generating .tdf coverage file)
 
 ## Prepare marker db
 
@@ -13,7 +12,8 @@ To generate one, generate a k-mer counting database with `meryl count` and filte
 
 Depending on the purpose, this marker set can be generically defined.
 
-As the polishing team aims to generate the most conservative alignment set to validate structural correctness, we define markers as single-copy k-mers, occurring in the expected single-copy range from the PCR-free Illumina read set and unique in the assembly.
+As the goal is to generate the most conservative alignment set to validate structural correctness, we define markers as single-copy k-mers,
+occurring in the expected single-copy range from the PCR-free Illumina read set and unique in the assembly.
 
 Note the "single-copy range" is different from the conventional definition of single-copy k-mer multiplicity found in a genome.
 Here, we refer to the k-mers that are expected to be found 'globaly once' in a pseudo-haploid assembly as "single-copy",
@@ -29,39 +29,85 @@ and the average read depth (usually called haploid genome coverage) matched the 
 
 Using this information, we set the upper boundary of the single-copy k-mer multiplicity as the 2.5-copy multiplicity, which can be inferred from the first (2-copy) and second (4-copy) peaks.
 
-Markers were generated from Illumina PCR-Free WGS 21-mer counts (IlluminaPCRfree.meryl) and 21-mers of an assembly (20200727.meryl) using the following command lines:
+We chose k=21 following [Fofanov et al, Bioinformatics, 2004](https://doi.org/10.1093/bioinformatics/bth266) to allow a maximum k-mer collision rate of 0.005, which is close to the Illumina sequencing error rate, from a 3.2Gb human genome size using [this script](https://github.com/marbl/merqury/blob/master/best_k.sh).
+
+Markers were generated from [Illumina PCR-Free WGS](https://github.com/marbl/CHM13#illumina-pcrfree-data) 21-mer counts [chm13.k21.meryl](https://s3-us-west-2.amazonaws.com/human-pangenomics/publications/MERFIN_2021/chm13/evaluation/chm13.k21.meryl.tar.gz).
+
+In brief,
 ```
 # Get k-mers with multiplicity > 42, filter out erroneous k-mers
-meryl greater-than 42 IlluminaPCRfree.meryl output IlluminaPCRfree.gt42.meryl
+meryl greater-than 42 chm13.k21.meryl output chm13.gt42.meryl
 
 # Get k-mers with multiplicity < 133, filter out > 2.5 copy k-mers (multiplicity at first peak + 1/4 * (second - first peak))
-meryl less-than 133 IlluminaPCRfree.gt42.meryl output IlluminaPCRfree.gt42.lt133.meryl
-# IlluminaPCRfree.gt42.lt133.meryl is available as IlluminaPCRfree.single.meryl
-
-# Get unique k-mers in the assembly
-meryl equal-to 1 20200727.meryl output 20200727.single.meryl
-
-# Intersect to guarantee the single-copy k-mers in the reads are globally unique in the assembly
-meryl intersect IlluminaPCRfree.single.meryl 20200727.single.meryl output IlluminaPCRfree.single.20200727.meryl
+meryl less-than 133 IlluminaPCRfree.gt42.meryl output IlluminaPCRfree.single.k21.meryl
 ```
 
-Our markers associated with a released t2t-chm13 assembly will be available on Globus as:
+Unique 21-mers of an assembly can be generated using the following command lines:
+```
+# Get unique k-mers in the assembly
+meryl count k=21 $asm.fasta output $asm.meryl
+meryl equal-to 1 $asm.meryl output $asm.1.meryl
+```
 
-`team-curation/marker_assisted/IlluminaPCRfree.single.YYYYMMDD.meryl.tar.gz`
+The final marker set is generated through an intersection:
+```
+# Intersect to guarantee the single-copy k-mers in the reads are globally unique in the assembly
+meryl intersect IlluminaPCRfree.single.k21.meryl $asm.1.meryl output $asm.single.k21.meryl
+```
+
+### Markers are available below:
+* [IlluminaPCRfree.single.k21.meryl](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/IlluminaPCRfree.single.k21.meryl.tar.gz)
+* [IlluminaPCRfree.single.k31.meryl](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/IlluminaPCRfree.single.k31.meryl.tar.gz)
+* [IlluminaPCRfree.single.k51.meryl](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/IlluminaPCRfree.single.k51.meryl.tar.gz)
+
+### Markers associated with a released T2T-CHM13 assembly is available below:
+#### v0.9
+* [chm13v0.9.single.k21.meryl.tar.gz](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/chm13v0.9.single.k21.meryl.tar.gz)
+
+#### v1.0
+* [chm13v1.0.single.k21.meryl.tar.gz](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/chm13v1.0.single.k21.meryl.tar.gz)
+* [chm13v1.0.single.k51.meryl.tar.gz](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/chm13v1.0.single.k51.meryl.tar.gz)
+
+#### v1.1
+* [chm13v1.1.single.k21.meryl.tar.gz](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/chm13v1.1.single.k21.meryl.tar.gz)
+* [chm13v1.1.single.k31.meryl.tar.gz](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/chm13v1.1.single.k31.meryl.tar.gz)
+* [chm13v1.1.single.k51.meryl.tar.gz](https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/alignments/marker/chm13v1.1.single.k51.meryl.tar.gz)
 
 ## Run
 
-This script is composed of three steps:
-1.	init.sh: Extract mappings to a `target` sequence, sort by read id, split alignments per 10k read chunks
-2.	convert.sh: Sort each read by SAM flag and convert each chunk to a fasta file preserving mapping position and orientation. A job array is submitted with each processing a chunk.
-3.	merge.sh: Count markers in each alignment, preserve alignments having the most unique markers when a subsequence is mapped to multiple positions (markers.cram), filter for length by `length_filt` and alignment identity >75% (markersandlength.cram), and generate the .tdf coverage tracks
+The marker assisted alignment runs per chromosome. Make sure the input alignment bam file is sorted and indexed.
 
-Submit example:
+### 1. Filter alignment per chromosome
 ```
-./_submit.sh input.bam chr20 t2t-chm13.20200727.fasta IlluminaPCRfree.single.20200727.meryl 25
+for i in $(seq 1 22) X
+do
+  filter_by_marker_nosplit.sh $alignment.bam chr$i $asm.fasta single.meryl len_filt
+done
 ```
-* input.bam: Any alignment file. We use winnowmap alignments. Sort and index.
-* target: Sequence id to generate the alignments. ex. chr20
-* assembly.fa: Full assembly set used to generate the input.bam. ex. t2t-chm13.20200602.fasta
-* marker.meryl: marker db.
-* length_filter: Filter out alignments shorter than this length. in kbp.
+
+A brief help me how to run this script:
+```
+./filter_by_marker_nosplit.sh
+Usage: filter_by_marker.sh alignment target asm marker.meryl len_filt
+
+Filters alignment based on single-copy kmers
+	alignment: input bam or cram file
+	target: target region (chr) to process
+	asm: entire fasta file
+	marker.meryl: meryl db containing marker kmers. This scripts generates chr specific markers.
+	len_filt: alignment length filter in kb. ex. 1 for 1kb
+```
+
+`len_filt` are alignment length filter in kb, to remove spurious short alignments. Below are possible length filters for long-reads (used in [McCartney et al, 2021](https://doi.org/10.1101/2021.07.02.450803)) and for short-reads (used in [Hoyet et al, 2021](https://doi.org/10.1101/2021.07.12.451456)).
+* PacBio HiFi: `10`
+* PacBio CLR: `1`
+* ONT: `25`
+* Illumina: `0`
+
+This step counts markers in each alignment, preserves alignments having the most unique markers when a subsequence is mapped to multiple positions (markers.bam), filter for length by `length_filt` and alignment identity >75% (markersandlength.bam).
+
+### 2. Aggregate per-chromosome filtered alignments
+```
+aggregate.sh $out_prefix
+```
+This step merges all `\*.markers.bam` and `\*.markersandlength.bam` separately, converts to `.paf`, and generates a coverage-depth `.wig` file.
