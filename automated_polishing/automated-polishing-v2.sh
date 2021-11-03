@@ -67,14 +67,14 @@ function run_one_iteration {
     # Filtering the BAM file.
     local out_falconc_sam=${out_prefix}.falconc.sam
     /usr/bin/time --format="cmd: %C\\nreal_time: %e s\\nuser_time: %U s\\nsys_time: %S s\\nmax_rss: %M kB\\nexit_status: %x" -o ${out_falconc_sam}.memtime \
-    falconc bam-filter-clipped -t -F 0x104 --input-fn hifi.markersandlength.XY.bam --output-fn hifi.markersandlength.XY_falconc.sam --output-count-fn hifi.markersandlength.XY_falcon.filtered_aln_count.txt 2>&1 | tee hifi.markersandlength.XY_falcon.log
+    falconc bam-filter-clipped -t -F 0x104 --input-fn ${out_winnowmap_sorted_bam} --output-fn ${out_falconc_sam} --output-count-fn ${out_falconc_sam}.filtered_aln_count.txt | tee ${out_prefix}.falconc.log
 
     # Polish using Racon.
     local out_racon_fasta=${out_prefix}.racon.fasta
     /usr/bin/time --format="cmd: %C\\nreal_time: %e s\\nuser_time: %U s\\nsys_time: %S s\\nmax_rss: %M kB\\nexit_status: %x" -o ${out_racon_fasta}.memtime \
-    ${RACON} -t ${threads} ${in_dataset} ${out_falconc_sam} ${in_draft} -L ${out_racon_fasta} -S > ${out_racon_fasta}
+    ${RACON} -t ${threads} ${in_dataset} ${out_falconc_sam} ${in_draft} -L ${out_racon_fasta}.vcf -S > ${out_racon_fasta}
 
-    # Generate the Meryl database.
+    # Generate the Meryl database of the assembly.
     local out_meryl=${out_prefix}.racon.meryl
     /usr/bin/time --format="cmd: %C\\nreal_time: %e s\\nuser_time: %U s\\nsys_time: %S s\\nmax_rss: %M kB\\nexit_status: %x" -o ${out_meryl}.memtime \
     ${MERYL} count k=21 ${out_racon_fasta} output ${out_meryl}
@@ -82,7 +82,7 @@ function run_one_iteration {
     # Run Merfin.
     local out_merfin=${out_prefix}.racon.merfin
     /usr/bin/time --format="cmd: %C\\nreal_time: %e s\\nuser_time: %U s\\nsys_time: %S s\\nmax_rss: %M kB\\nexit_status: %x" -o ${out_merfin}.memtime \
-    ${MERFIN} -sequence ${out_racon_fasta} -seqmers ${out_meryl} -readmers ${in_readmers} -peak 106 -vcf ${out_racon_fasta} -output ${out_merfin} -memory1 12 -memory2 150 -vmer -threads ${threads} -disable-kstar
+    ${MERFIN} -sequence ${out_racon_fasta} -seqmers ${out_meryl} -readmers ${in_readmers} -peak 106 -vcf ${out_racon_fasta}.vcf -output ${out_merfin} -memory1 12 -memory2 150 -vmer -threads ${threads} -disable-kstar
 
     ##Call Consensus
     local out_consensus=${out_prefix}.consensus.fasta
