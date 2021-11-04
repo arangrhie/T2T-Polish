@@ -76,18 +76,19 @@ falconc bam-filter-clipped -t -F 0x104 \
 The filtered alignments produced are then used as input to Racon, here the Racon `liftover` branch is utilised.
 This is an extension of the `master` branch of Racon with two custom features:
 * BED selection of regions for polishing 
-* logging the changes introduced to the draft sequences to produce the polished output (in VCF, PAF or SAM format)
+* logging the changes introduced to the draft sequences to produce the polished output (in VCF, PAF or optionally SAM format)
 
-Racon is run with default options except for two new logging options `-L out_prefix.vcf` and `-S`,
+Racon is run with default options except for two new logging options `-L out_prefix` and `-S`,
 which store the liftover information between the input and output sequences.
+We only need the out_prefix.vcf, which is generated with
 
 ```
 racon -t ${threads} \
   ${in_dataset} \
   ${out_falconc_sam} \
   ${in_draft} \
-  -L ${out_racon_fasta}.vcf \
-  -S > ${out_racon_fasta}
+  -L ${out_racon_fasta} \
+  > ${out_racon_fasta}
 ```
 
 ### 4. Filter edits with Merfin
