@@ -104,7 +104,7 @@ function run_all {
     local iterations=$1; shift
     local in_draft=$1; shift
     local in_reads=$1; shift
-    local in_readmers=$1; shift         # IlluminaPCRfree.k21.meryl
+    local in_readmers=$1; shift         # IlluminaPCRfree.k21.gt1.meryl
 
     mkdir -p $(dirname ${out_prefix})
     cp ${in_draft} ${out_prefix}.iter_0.consensus.fasta
