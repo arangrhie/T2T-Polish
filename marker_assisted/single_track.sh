@@ -8,18 +8,22 @@ if [[ "$#" -lt 3 ]]; then
 fi
 
 asm=$1
-asm=`echo $asm | sed 's/.fasta$//g' | sed 's/.fa$//g'`
+asm=`echo $asm | sed 's/.gz$//g' | sed 's/.fasta$//g' | sed 's/.fa$//g'`
 mer=$2
 k=$3
 
-meryl count k=$k $1 output $asm.k$k.meryl
-meryl equal-to 1 $asm.k$k.meryl output $asm.k$k.1.meryl
-meryl intersect $asm.k$k.1.meryl $mer output $asm.k$k.single.meryl
-meryl-lookup -bed -sequence $1 -mers $asm.k$k.single.meryl > $asm.single.k$k.bed
-meryl-lookup -wig-depth -sequence $1 -mers $asm.k$k.single.meryl > $asm.single.k$k.wig
+single=$asm.single.k$k
 
-if ! [[ -s $1.fai ]]; then
-  samtools faidx $1
+meryl count k=$k $1 output $asm.k$k.meryl
+meryl intersect [ equal-to 1 $asm.k$k.meryl ] $mer output $single.meryl
+meryl-lookup -bed -sequence $1 -mers $single.meryl > $single.bed
+meryl-lookup -wig-depth -sequence $1 -mers $single.meryl > $single.wig
+
+fa=`echo $1 | sed 's/.gz$//g'`
+if ! [[ -s $fa.fai ]]; then
+  samtools faidx $fa
 fi
-igvtools count $asm.single.k$k.bed $asm.k$k.single.tdf $1.fai
+
+# Optional, if .tdf is needed
+# igvtools count $single.bed $single.tdf $fa.fai
 
