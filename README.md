@@ -6,7 +6,7 @@ For exact command lines and workflows used to generate the T2T-CHM13v1.0 and T2T
 
 ## Contents
 * [QV estimate with hybrid k-mer db](merqury)
-* [homopolymer and microsatellite run length comparison](runlength)
+* [Homopolymer and 2-mer microsatellite run length comparison](runlength)
 * [K\* metric](kmetric)
 * Repeat-aware [Winnowmap2 alignments](winnowmap) and [Marker assisted alignment filtering](marker_assisted)
 * [Coverage analysis](coverage)
@@ -25,7 +25,7 @@ For exact command lines and workflows used to generate the T2T-CHM13v1.0 and T2T
 * [TandemMapper2 (re-named as VerityMap)](https://github.com/ablab/VerityMap)
 
 ### Automated polishing
-* [Racon](https://github.com/isovic/racon/tree/liftover): Liftover branch for outputting .vcf
+* [Racon](https://github.com/isovic/racon/tree/liftover): Liftover branch for outputting edits in `.vcf`
 * [Merfin](https://github.com/arangrhie/merfin): Latest stable code-base
 
 ### Base level QV estimation
