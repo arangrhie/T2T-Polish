@@ -25,7 +25,7 @@ mkdir -p logs
 
 # computing requirements
 cpus=4
-mem=12g
+mem=24g
 partition=norm
 walltime=2-0
 path=`pwd`
