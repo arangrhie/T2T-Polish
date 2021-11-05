@@ -39,7 +39,7 @@ In brief,
 meryl greater-than 42 chm13.k21.meryl output chm13.gt42.meryl
 
 # Get k-mers with multiplicity < 133, filter out > 2.5 copy k-mers (multiplicity at first peak + 1/4 * (second - first peak))
-meryl less-than 133 IlluminaPCRfree.gt42.meryl output IlluminaPCRfree.single.k21.meryl
+meryl less-than 133 chm13.gt42.meryl output IlluminaPCRfree.single.k21.meryl
 ```
 
 Unique 21-mers of an assembly can be generated using the following command lines:
@@ -85,17 +85,17 @@ do
 done
 ```
 
-A brief help me how to run this script:
+A brief help message on how to run this script:
 ```
 ./filter_by_marker_nosplit.sh
 Usage: filter_by_marker.sh alignment target asm marker.meryl len_filt
 
 Filters alignment based on single-copy kmers
-	alignment: input bam or cram file
-	target: target region (chr) to process
-	asm: entire fasta file
-	marker.meryl: meryl db containing marker kmers. This scripts generates chr specific markers.
-	len_filt: alignment length filter in kb. ex. 1 for 1kb
+  alignment: input bam or cram file
+  target: target region (chr) to process
+  asm: entire fasta file
+  marker.meryl: meryl db containing marker kmers. This scripts generates chr specific markers.
+  len_filt: alignment length filter in kb. ex. 1 for 1kb
 ```
 
 `len_filt` are alignment length filter in kb, to remove spurious short alignments. Below are possible length filters for long-reads (used in [McCartney et al, 2021](https://doi.org/10.1101/2021.07.02.450803)) and for short-reads (used in [Hoyet et al, 2021](https://doi.org/10.1101/2021.07.12.451456)).
