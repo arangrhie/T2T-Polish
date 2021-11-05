@@ -16,7 +16,7 @@ Extract with `tar -xzf`, download Merqury and Meryl. No installation is required
 ## Quick start
 
 ```
-$tools/merqury/merqury.sh $read.meryl asm.fasta
+$tools/merqury/merqury.sh $read.meryl asm.fasta out-prefix
 ```
 `asm_only.bed` file contains k-mers in the assembly not found in the given `$read.meryl`.
 
