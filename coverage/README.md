@@ -25,7 +25,7 @@ This runs the following scripts:
 * coverage_stat.sh
 * low_support.sh
 
-`low_support.sh` requires additional files. Adjust the script to match the file path. See [prerequisites](coverage#Prerequisites).
+`low_support.sh` requires additional files. Adjust the script to match the file path. See [prerequisites](coverage#prerequisites-1).
 
 ## Collect Summary
 
