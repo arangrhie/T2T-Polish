@@ -58,33 +58,29 @@ SCRIPT=`cat SCRIPT`
 set -e
 
 if [ ! -e $asm.fai ]; then
-	echo "init.sh not executed"
-	exit 0
+  echo "init.sh not executed"
+  exit 0
 fi
 
 if [ -e $target.markersandlength.cram ]; then
-	echo "Already done"
-	exit 0
+  echo "Already done"
+  exit 0
 elif [ ! -s split.$target.aligned.fasta ]; then
-	split=split.$target.srt_id.$i
-	echo "Processing file $split"
-	cat $target.header > $split.tmp.sam
-	cat $split | awk -v rid="a" '{if (rid!=$1) {print $1; rid=$1}}' > $split.tmp.list
-	for rid in $(cat $split.tmp.list)
-	do
-		# echo "Sort alignments from read $rid by flag" ## commenting out as printing these logs take much longer
-		cat $split | grep $rid | sort -n -k2 >> $split.tmp.sam
-	done
-	echo -e "\nsamToAlignment $split.tmp.sam $asm"
-	$SCRIPT/src/samToAlignment $split.tmp.sam $asm 2> $split.tmp.err \
-		| awk '{if ($9 == 0) { print ">"$1"_"$5"_"$9"_"$10"_"$(NF-1); print $NF } else { print ">"$1"_"$5"_"$9"_"$12-$11"_"$(NF-1); print $NF}}' \
-		> $split.aligned.fasta
-		
-	echo
-	echo "Clean up $(ls $split.tmp.*)"
-	rm $split.tmp.*
+  split=split.$target.srt_id.$i
+  echo "Processing file $split"
+  cat $target.header > $split.tmp.sam
+  # Sort alignments by flag for each read ID" ## commenting out as printing these logs take much longer
+  java -jar -Xmx12g $SCRIPT/src/samSortByFlag.jar $split >> $split.tmp.sam
+  echo -e "\nsamToAlignment $split.tmp.sam $asm"
+  $SCRIPT/src/samToAlignment $split.tmp.sam $asm 2> $split.tmp.err \
+    | awk '{if ($9 == 0) { print ">"$1"_"$5"_"$9"_"$10"_"$(NF-1); print $NF } else { print ">"$1"_"$5"_"$9"_"$12-$11"_"$(NF-1); print $NF}}' \
+    > $split.aligned.fasta
 
-	echo "Output file generated as $split.aligned.fasta"
+  echo
+  echo "Clean up $split $(ls $split.tmp.*)"
+  rm $split $split.tmp.*
+
+  echo "Output file generated as $split.aligned.fasta"
 else
-	echo "split.$target.aligned.fasta already exists. Nothing to do."
+  echo "split.$target.aligned.fasta already exists. Nothing to do."
 fi
