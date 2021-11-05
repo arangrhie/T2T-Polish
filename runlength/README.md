@@ -1,4 +1,4 @@
-# homopolymer and microsatellite run length matrix
+# Homopolymer and 2-mer microsatellite run length matrix
 
 The run-length matrix using `runLengthMatrix` executable is available with [Margin](https://github.com/UCSC-nanopore-cgl/margin).
 
