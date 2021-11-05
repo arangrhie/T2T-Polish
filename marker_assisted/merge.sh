@@ -83,7 +83,7 @@ else
 		echo "Prepare $target.single.meryl"
 		meryl count k=21 $target.fa output $target.meryl
 		meryl intersect $target.meryl $single output $target.single.meryl
-		meryl-lookup -existence -memory 12 -sequence $target.aligned.fasta -mers $target.single.meryl | awk '$NF>0 {print $1"\t"$NF}' > $target.alignment.posCount
+		meryl-lookup -existence -sequence $target.aligned.fasta -mers $target.single.meryl | awk '$NF>0 {print $1"\t"$NF}' > $target.alignment.posCount
 		echo
 	fi
 
