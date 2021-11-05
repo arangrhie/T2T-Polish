@@ -124,7 +124,7 @@ collect_clipped $pri.paf $pri.w1k 1024 "$name"
 collect_coverage $pri.paf $pri 1024 "$name"
 
 # Per strand coverage
-collect_coverage $pri.paf $pri 1024 "$name" 1
+#collect_coverage $pri.paf $pri 1024 "$name" 1
 
 
 

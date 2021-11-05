@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if ! [[ "$#" -eq 3 ]]; then
-  echo "Usage: ./low_support_hifi.sh in.paf ver platform"
+  echo "Usage: ./low_support.sh in.paf ver platform"
   echo "  in.paf: bam2paf"
   echo "  ver:    assembly version prefix"
   echo "  platform: HiFi or ONT"
