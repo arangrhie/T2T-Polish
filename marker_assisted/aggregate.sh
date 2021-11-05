@@ -11,7 +11,7 @@ out=$1
 aggregate() {
 	prefix=$1
 	out=$2
-	ls *.$prefix.cram > $prefix.list
+	ls chr*.$prefix.bam > $prefix.list
 
 	echo "
 	Samtools Merge"
@@ -22,6 +22,7 @@ aggregate() {
 	Convert to paf"
 	$tools/T2T-Polish/coverage/sam2paf.sh $out.$prefix.bam $out.$prefix.paf
 	java -jar -Xmx4g $tools/T2T-Polish/paf_util/pafToCovWig.jar $out.$prefix.paf "$out" 1024 > $out.$prefix.cov.wig
+  pigz $out.$prefix.paf
 }
 
 aggregate markersandlength $out
