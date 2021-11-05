@@ -15,7 +15,7 @@ done
 for p in GC AT GA TC
 do
   echo "Convert to bed: $p"
-  #java -jar -Xmx1g ~/codes/bedToFixedWig.jar microsatellite.$p.128.bed $p 128 > microsatellite.$p.128.wig
+  java -jar -Xmx1g $tools/T2T-Polish/paf_util/bedToFixedWig.jar microsatellite.$p.128.bed $p 128 > microsatellite.$p.128.wig
 
   echo "Filter regions > 80%"
   awk -v n=80 '$NF>n' microsatellite.$p.128.bed > microsatellite.$p.128.gt80.bed
