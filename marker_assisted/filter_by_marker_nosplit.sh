@@ -21,7 +21,7 @@
 ######################################################################
 
 if [[ "$#" -lt 5 ]]; then
-  echo "Usage: filter_by_marker.sh alignment target asm marker.meryl len_filt"
+  echo "Usage: filter_by_marker_nosplit.sh alignment target asm marker.meryl len_filt"
   echo
   echo "Filters alignment based on single-copy kmers"
   echo -e "\talignment: input bam or cram file"
