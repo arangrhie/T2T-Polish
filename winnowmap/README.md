@@ -1,5 +1,5 @@
 # Winnowmap Alignment
-Aligne long-reads with [Winnowmap](https://github.com/marbl/Winnowmap/releases).
+Align long-reads with [Winnowmap](https://github.com/marbl/Winnowmap/releases).
 
 From the reads, top 0.02% of the repetitive 15-mers were collected using Meryl and downweighted in the process of minimizer sampling.
 Use platform specific mapping parameters;
