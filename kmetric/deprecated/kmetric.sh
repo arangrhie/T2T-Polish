@@ -66,9 +66,9 @@ echo "track autoScale=on yLineMark=0 yLineOnOff=on" > ${OUT}.expfrq.wig
 # READ and ASM are in the same CHR POS COUNT order, so paste them together to CHR POS Ka Kr and get the k* metric
 cut -f3 ${READ} | paste ${ASM} - \
 	| awk -F '\t' -v CHR="" '{if(CHR!=$1) {print "variableStep chrom="$1" span=1"; CHR=$1}; if ($4==0) {print $2"\t0"} else if ($4>=$3) {print $2"\t"($4/$3)} else {print $2"\t"(-1*($3/$4))}}' \
-	>> ${OUT}.expfrq.wig
+	>> ${OUT}.kmetric.wig
 
-#convert to BigWig
-#module load ucsc
-wigToBigWig ${OUT}.expfrq.wig ${CHR} ${OUT}.expfrq.bw
+echo "#convert to BigWig"
+module load ucsc
+wigToBigWig ${OUT}.kmetric.wig ${CHR} ${OUT}.kmetric.bw
 
