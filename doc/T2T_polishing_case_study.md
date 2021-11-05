@@ -3,7 +3,7 @@
 ----
 
 ### CHM13 chr20 case-study
-Polishing of CHM13 chr20 with T2T polishing pipeline
+This case-study is an example of T2T polishing scheme on `CHM13 chr20`. You can copy-paste the commands from here to generate the final polished assembly. This case-study focuses on finding SV and SNV-like errors in the assembly.
 
 ##### Step 1: Download and prepare input data (Requirement: Docker and Samtools)
 ```bash
@@ -39,6 +39,95 @@ wget -P ${INPUT_DIR} https://storage.googleapis.com/pepper-deepvariant-public/T2
 samtools merge -@"${THREADS}" "${INPUT_DIR}"/chm13.draft_v0.9.illumina_hifi_hybrid.chr20.bam "${INPUT_DIR}"/chm13.draft_v0.9.hifi_20k.wm_1.11.pri.chr20.bam "${INPUT_DIR}"/chm13.draft_v0.9.pcrfree.chr20.bam
 samtools index -@"${THREADS}" "${INPUT_DIR}"/chm13.draft_v0.9.illumina_hifi_hybrid.chr20.bam
 ```
+##### Step 2: Find SV-like errors
+```bash
+# Run parliament2 (Illumina)
+PARLIAMENT_OUTPUT_PREFIX="PARLIAMENT_SV_OUTPUT"
+PARLIAMENT_OUTPUT="${OUTPUT_DIR}"/"PARLIAMENT_SV_OUTPUT.combined.genotyped.vcf"
+sudo docker pull dnanexus/parliament2:latest
+
+sudo docker run \
+-v "${INPUT_DIR}":/home/dnanexus/in \
+-v "${OUTPUT_DIR}":/home/dnanexus/out \
+dnanexus/parliament2:latest \
+--bam chm13.draft_v0.9.pcrfree.chr20.bam \
+-r chm13.draft_v0.9.chr20.fasta \
+--prefix "${PARLIAMENT_OUTPUT_PREFIX}" \
+--bai chm13.draft_v0.9.pcrfree.chr20.bam.bai \
+--fai chm13.draft_v0.9.chr20.fasta.fai \
+--filter_short_contigs --breakdancer --breakseq --manta --cnvnator \
+--lumpy --delly_deletion --genotype --svviz_only_validated_candidates
+
+# Run sniffles (HiFi, ONT)
+sudo docker pull quay.io/biocontainers/sniffles:1.0.12--h8b12597_1
+
+# Sniffles on HiFi reads
+HIFI_SVS_SNIFFLES="chm13_chr20_sniffles_hifi_svs.vcf"
+
+sudo docker run \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+quay.io/biocontainers/sniffles:1.0.12--h8b12597_1 \
+sniffles \
+-m "${INPUT_DIR}"/chm13.draft_v0.9.hifi_20k.wm_1.11.pri.chr20.bam \
+-v "${OUTPUT_DIR}"/"${HIFI_SVS_SNIFFLES}" \
+-d 500 -n -1 -s 3
+
+# Sniffles on ONT reads
+ONT_SVS_SNIFFLES="chm13_chr20_sniffles_ont_svs.vcf"
+
+sudo docker run \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+quay.io/biocontainers/sniffles:1.0.12--h8b12597_1 \
+sniffles \
+-m "${INPUT_DIR}"/chm13.draft_v0.9.ont_guppy_3.6.0.wm_1.11.chr20.bam \
+-v "${OUTPUT_DIR}"/"${ONT_SVS_SNIFFLES}" \
+-d 500 -n -1 -s 3
+
+ONT_SVS_SNIFFLES_FILTERED="chm13_chr20_sniffles_ont_svs.filtered.vcf"
+HIFI_SVS_SNIFFLES_FILTERED="chm13_chr20_sniffles_hifi_svs.filtered.vcf"
+# filter the SV calls
+sudo docker run -it \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+kishwars/t2t_polishing:0.1 \
+python3 filter.py "${OUTPUT_DIR}"/"${HIFI_SVS_SNIFFLES}" > "${OUTPUT_DIR}"/"${HIFI_SVS_SNIFFLES_FILTERED}"
+
+sudo docker run -it \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+kishwars/t2t_polishing:0.1 \
+python3 filter.py "${OUTPUT_DIR}"/"${ONT_SVS_SNIFFLES}" > "${OUTPUT_DIR}"/"${ONT_SVS_SNIFFLES_FILTERED}"
+
+# refine SVs with IRIS (HiFi)
+IRIS_OUTPUT_DIR="IRIS_OUT"
+HIFI_SVS_SNIFFLES_FILTERED_IRIS="chm13_chr20_sniffles_hifi_svs.filtered.iris.vcf"
+
+sudo docker run -it \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+quay.io/biocontainers/irissv:1.0.4--hdfd78af_2 \
+iris --hifi --keep_long_variants --keep_files \
+genome_in="${INPUT_DIR}"/chm13.draft_v0.9.chr20.fasta \
+reads_in="${INPUT_DIR}"/chm13.draft_v0.9.hifi_20k.wm_1.11.pri.chr20.bam \
+vcf_in="${OUTPUT_DIR}"/"${HIFI_SVS_SNIFFLES_FILTERED}" \
+vcf_out="${OUTPUT_DIR}"/"${HIFI_SVS_SNIFFLES_FILTERED_IRIS}" \
+out_dir="${OUTPUT_DIR}"/"${IRIS_OUT}"
+
+# As we found no SVs after filtering this file will be empty
+echo "${PARLIAMENT_OUTPUT}" > "${OUTPUT_DIR}"/SV_filelist.txt
+echo "${OUTPUT_DIR}"/"${ONT_SVS_SNIFFLES_FILTERED}" >> "${OUTPUT_DIR}"/SV_filelist.txt
+echo "${OUTPUT_DIR}"/"${HIFI_SVS_SNIFFLES_FILTERED_IRIS}" >> "${OUTPUT_DIR}"/SV_filelist.txt
+
+sudo docker run -it \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+quay.io/biocontainers/jasminesv:1.1.4--hdfd78af_0 \
+jasmine max_dist=500 min_seq_id=0.3 spec_reads=3 --output_genotypes \
+file_list="${OUTPUT_DIR}"/SV_filelist.txt out_file="${OUTPUT_DIR}"/"SV_like_errors.vcf"
+```
+After merging we have the finale VCF: `"${OUTPUT_DIR}"/SV_like_errors.vcf` which contains all the errors. We then manually inspected all of these variants and confirmed all of them are either FPs or true hets. So in this case we did not find any SV-like errors.
 
 ##### Step 3: Find small errors
 ```bash
@@ -141,3 +230,62 @@ kishwars/pepper_deepvariant:r0.4 \
 bcftools stats "${MERGE_VCF_OUTPUT}"
 # this will show we have found 79 records that are potential errors in the assembly
 ```
+
+##### Step 4: Run merfin and generate a polished assembly
+```bash
+cd "${HOME}"
+git clone https://github.com/arangrhie/merfin.git
+cd merfin/src
+make -j 12
+cd "${HOME}"
+
+# this will provide a path to merfin use that for the running merfin `/PATH/TO/merfin`
+wget -P ${INPUT_DIR} https://s3-us-west-2.amazonaws.com/human-pangenomics/publications/MERFIN_2021/chm13/evaluation/chm13.k21.gt1.meryl.tar.gz
+wget -P ${INPUT_DIR} https://s3-us-west-2.amazonaws.com/human-pangenomics/publications/MERFIN_2021/chm13/evaluation/lookup_table.k21.txt
+
+tar -xvf "${INPUT_DIR}"/"chm13.k21.gt1.meryl.tar.gz"
+mv chm13.k21.gt1.meryl "${INPUT_DIR}"/
+
+MERGE_VCF_OUTPUT="${OUTPUT_DIR}"/CHM13_MERGED_SMALL_VARIANTS.vcf.gz
+gunzip "${MERGE_VCF_OUTPUT}"
+MERGE_VCF_OUTPUT="${OUTPUT_DIR}"/CHM13_MERGED_SMALL_VARIANTS.vcf
+
+READMER_DB="${INPUT_DIR}"/"chm13.k21.gt1.meryl"
+LOOKUP_TABLE="${INPUT_DIR}"/"lookup_table.k21.txt"
+MERFIN_OUTPUT="${OUTPUT_DIR}"/"CHM13_MERGED_SMALL_VARIANTS.merfin"
+
+"${HOME}"/merfin/build/bin/merfin -polish \
+-vcf "${MERGE_VCF_OUTPUT}" \
+-threads "${THREADS}" \
+-sequence "${INPUT_DIR}"/chm13.draft_v0.9.chr20.fasta \
+-readmers "${READMER_DB}" \
+-prob "${LOOKUP_TABLE}" \
+-peak 106.7 \
+-output "${MERFIN_OUTPUT}"
+
+MERFIN_OUTPUT="${OUTPUT_DIR}"/"CHM13_MERGED_SMALL_VARIANTS.merfin.polish.vcf"
+
+sudo docker run --ipc=host \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+kishwars/pepper_deepvariant:r0.4 \
+bcftools view -Oz "${MERFIN_OUTPUT}" > "${MERFIN_OUTPUT}.gz"
+
+sudo docker run --ipc=host \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+kishwars/pepper_deepvariant:r0.4 \
+bcftools index "${MERFIN_OUTPUT}.gz"
+
+POLISHED_FASTA="${OUTPUT_DIR}"/chm13.draft_v0.9.chr20.polished.fasta
+
+sudo docker run --ipc=host \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+kishwars/pepper_deepvariant:r0.4 \
+bcftools consensus \
+-f "${INPUT_DIR}"/chm13.draft_v0.9.chr20.fasta \
+-H 1 "${MERFIN_OUTPUT}.gz" > "${POLISHED_FASTA}"
+# Applied 46 variants
+```
+After this we have `"${OUTPUT_DIR}"/chm13.draft_v0.9.chr20.polished.fasta` which is the polished assembly we have generated.
