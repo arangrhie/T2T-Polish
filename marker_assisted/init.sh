@@ -51,8 +51,8 @@ fi
 SCRIPT=`cat SCRIPT`
 
 if [[ "$6" == "T" ]]; then
-  echo "Splitting in short-read mode. Processing 100k reads per file"
-  NUM_READS_PER_FILE=200000  # Increase or decrease depending on the read set - for illumina reads
+  echo "Splitting in short-read mode. Processing 2m reads per file"
+  NUM_READS_PER_FILE=2000000  # Increase or decrease depending on the read set - for illumina reads
 else
   echo "Splitting in long-read mode. Processing 10k reads per file"
   NUM_READS_PER_FILE=10000  # Increase or decrease depending on the read set - for long reads
