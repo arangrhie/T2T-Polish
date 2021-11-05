@@ -34,7 +34,7 @@ if [[ "$#" -lt 5 ]]; then
 fi
 
 
-## Dependency: samtools, samToAlignment, meryl v1.0, subsetSamByKmers.py, samToErrorRate, SubFile, IGVTools
+## Dependency: samtools, samToAlignment, meryl v1.3, subsetSamByKmers.py, samToErrorRate, SubFile
 
 alignment=$1  # input bam / cram file 
 target=$2     # chrX
