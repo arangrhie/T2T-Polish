@@ -188,7 +188,7 @@ sudo docker run --ipc=host \
 -v "${INPUT_DIR}":"${INPUT_DIR}" \
 -v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
 kishwars/pepper_deepvariant:r0.4 \
-bcftools view -f "PASS" -v indels -e 'FORMAT/VAF<=0.5 | FORMAT/GQ<=25' -Oz "${OUTPUT_DIR}"/"${OUTPUT_VCF_ONT}" > "${OUTPUT_DIR}"/"${SMALL_VARIANTS_ONT}"
+bcftools view -f "PASS" -V indels -e 'FORMAT/VAF<=0.5 | FORMAT/GQ<=25' -Oz "${OUTPUT_DIR}"/"${OUTPUT_VCF_ONT}" > "${OUTPUT_DIR}"/"${SMALL_VARIANTS_ONT}"
 
 # Merge the small variants
 HAPPY_OUTPUT_DIR="${OUTPUT_DIR}"/happy_output
