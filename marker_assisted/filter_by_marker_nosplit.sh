@@ -128,8 +128,8 @@ else
     echo "*** Found $target.filteredList. Skipping this step. ***"
   else
     $SCRIPT/src/samToErrorRate $target.filtered.sam $asm \
-    | awk '{if ($9 == 0) print $0; else print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7"\t"$8"\t1\t"$12-$11"\t"$12-$10"\t"$12"\t"$13"\t"$14"\t"$15"\t"$16"\t"$17}' \
-    | awk -v l=$len_filt '{if ($3 <= -1*l && $4 >= 75) print $target}'| awk -v rid="" '{if (rid!=$1) {print $1; rid=$1}}' > $target.filteredList
+      | awk -v l=$len_filt 'BEGIN{rid=""}{if($3 <= -1*l && $4 >= 75 && rid != $1){print $1; rid=$1}}' \
+      > $target.filteredList
   fi
 
   cat $target.header > $target.tmp.sam
