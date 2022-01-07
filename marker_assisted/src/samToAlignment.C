@@ -174,7 +174,7 @@ main (int argc, char **argv) {
            qrySeq[core->l_qseq]='\0';
            lastid = id;
         }
-        char *alnStr = new char[qryLen*2];
+        char *alnStr = new char[qryLen*3];
         uint32_t pos = 0;
 
         int errors = 0;
