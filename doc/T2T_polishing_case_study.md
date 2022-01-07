@@ -188,7 +188,7 @@ sudo docker run --ipc=host \
 -v "${INPUT_DIR}":"${INPUT_DIR}" \
 -v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
 kishwars/pepper_deepvariant:r0.4 \
-bcftools view -f "PASS" -v indels -e 'FORMAT/VAF<=0.5 | FORMAT/GQ<=25' -Oz "${OUTPUT_DIR}"/"${OUTPUT_VCF_ONT}" > "${OUTPUT_DIR}"/"${SMALL_VARIANTS_ONT}"
+bcftools view -f "PASS" -V indels -e 'FORMAT/VAF<=0.5 | FORMAT/GQ<=25' -Oz "${OUTPUT_DIR}"/"${OUTPUT_VCF_ONT}" > "${OUTPUT_DIR}"/"${SMALL_VARIANTS_ONT}"
 
 # Merge the small variants
 HAPPY_OUTPUT_DIR="${OUTPUT_DIR}"/happy_output
@@ -239,12 +239,10 @@ cd merfin/src
 make -j 12
 cd "${HOME}"
 
-# this will provide a path to merfin use that for the running merfin `/PATH/TO/merfin`
 wget -P ${INPUT_DIR} https://s3-us-west-2.amazonaws.com/human-pangenomics/publications/MERFIN_2021/chm13/evaluation/chm13.k21.gt1.meryl.tar.gz
 wget -P ${INPUT_DIR} https://s3-us-west-2.amazonaws.com/human-pangenomics/publications/MERFIN_2021/chm13/evaluation/lookup_table.k21.txt
 
-tar -xvf "${INPUT_DIR}"/"chm13.k21.gt1.meryl.tar.gz"
-mv chm13.k21.gt1.meryl "${INPUT_DIR}"/
+tar -xvf "${INPUT_DIR}"/"chm13.k21.gt1.meryl.tar.gz" -C "${INPUT_DIR}"/
 
 MERGE_VCF_OUTPUT="${OUTPUT_DIR}"/CHM13_MERGED_SMALL_VARIANTS.vcf.gz
 gunzip "${MERGE_VCF_OUTPUT}"
@@ -289,3 +287,45 @@ bcftools consensus \
 # Applied 46 variants
 ```
 After this we have `"${OUTPUT_DIR}"/chm13.draft_v0.9.chr20.polished.fasta` which is the polished assembly we have generated.
+
+##### Step 5: Evaluating the assembly quality before and after t2t_polishing
+```bash
+MERQURY_ASSEMENT_DIR="${OUTPUT_DIR}/merqury_assessement"
+mkdir "${MERQURY_ASSEMENT_DIR}"
+
+RAW_ASM_MERQURY_ASSEMENT_DIR="${OUTPUT_DIR}/merqury_assessement/raw_assembly_qv"
+mkdir "${RAW_ASM_MERQURY_ASSEMENT_DIR}"
+
+wget -P ${INPUT_DIR} https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/qc/hybrid.k21.meryl.tar.gz
+tar -xvf "${INPUT_DIR}"/"hybrid.k21.meryl.tar.gz" -C "${RAW_ASM_MERQURY_ASSEMENT_DIR}"/
+
+sudo docker run \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+-v "${RAW_ASM_MERQURY_ASSEMENT_DIR}":/data \
+juklucas/hpp_merqury:latest \
+merqury.sh hybrid.meryl "${INPUT_DIR}"/chm13.draft_v0.9.chr20.fasta chm13_chr20_raw_qv
+
+cat "${RAW_ASM_MERQURY_ASSEMENT_DIR}"/chm13_chr20_raw_qv.qv
+# The output will show this:
+# chm13.draft_v0.9.chr20	170	66210241	69.127	1.22266e-07
+# which means the quality of the raw assembly is 69.12 with 170 missing k-mers from the hybrid k-mer db
+
+POLISHED_ASM_MERQURY_ASSEMENT_DIR="${OUTPUT_DIR}/merqury_assessement/polished_assembly_qv"
+mkdir "${POLISHED_ASM_MERQURY_ASSEMENT_DIR}"
+tar -xvf "${INPUT_DIR}"/"hybrid.k21.meryl.tar.gz" -C "${POLISHED_ASM_MERQURY_ASSEMENT_DIR}"/
+
+sudo docker run \
+-v "${INPUT_DIR}":"${INPUT_DIR}" \
+-v "${OUTPUT_DIR}":"${OUTPUT_DIR}" \
+-v "${POLISHED_ASM_MERQURY_ASSEMENT_DIR}":/data \
+juklucas/hpp_merqury:latest \
+merqury.sh hybrid.meryl "${OUTPUT_DIR}"/chm13.draft_v0.9.chr20.polished.fasta chm13_chr20_polished_qv
+
+cat "${POLISHED_ASM_MERQURY_ASSEMENT_DIR}"/chm13_chr20_polished_qv.qv
+# The output will show this:
+# chm13.draft_v0.9.chr20.polished	144	66210231	69.8478	1.03566e-07
+# which means the quality of the polished assembly is 69.84 and with 144 missing k-mers
+```
+
+In this case-study we improved the raw assembly quality of CHM13 v0.9 from `QV69.12` to `QV69.84`.

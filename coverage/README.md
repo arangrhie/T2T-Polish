@@ -126,7 +126,8 @@ Unlike the rest, this script requires several file paths. `asm` and `telo` can b
 
 * asm    : `ver`.bed; Bed file containing regions as chromosome (scaffold) length.
 * telo   : `ver`.telo.bed; Ends of chromosomes to exclude from being flagged as low coverage due to natural sequencing coverage dropouts. Could be an empty file.
-* error. : `ver`.error.bed; Regions of known consensus base errors. [Merqury](https://github.com/arangrhie/T2T-Polish/tree/master/merqury) asm only track.
+* error  : `ver`.error.bed; Regions of known consensus base errors. [Merqury](https://github.com/arangrhie/T2T-Polish/tree/master/merqury) asm only track.
+* exclude: `ver`.exclude.bed; Any regions to exclude, e.g. known collapses. Could be an empty file.
 * pattern: pattern/`ver` folder; containing results from [seqrequester](https://github.com/arangrhie/T2T-Polish/tree/master/pattern).
 
 ### HiFi mode
