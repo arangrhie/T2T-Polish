@@ -5,6 +5,16 @@
 * python 2.7.3 or higher
 * java
 * samtools
+* zlib
+* POSIX Threading Library (libpthread)
+
+## Installation
+
+```
+cd src
+make
+cd ..
+```
 
 ## Prepare marker db
 
