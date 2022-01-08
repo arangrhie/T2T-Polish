@@ -85,7 +85,7 @@ def find_homopolymer_cases(vcf_file, fasta_file):
 
         # total_records += 1
 
-    print("TOTAL RECORDS: ", total_records)
+    # print("TOTAL RECORDS: ", total_records)
     # print("TOTAL HOM_CALLS: ", homopolymer_changes)
 
 if __name__ == '__main__':
