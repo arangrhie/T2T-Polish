@@ -69,7 +69,7 @@ if __name__ == '__main__':
     for i, bed in enumerate(all_beds_v10):
         plot_homopolmer_support(bed, axes[1][i])
 
-    plt.savefig('./CHM13_v0.9_vs_v1.0_dimer_support.pdf', format='pdf', dpi=300)
+    plt.savefig('./dimer_support.png', format='png', dpi=300)
     # plt.show()
 
 
