@@ -1,0 +1,10 @@
+Generate figure 3d by running:
+
+ python3 plot_dimer_support.py \
+--bed ./input_outputs/CHM13_v0.9_dimer_concondance_illumina.bed,./input_outputs/CHM13_v0.9_dimer_concondance_hifi.bed \
+--bed2 ./input_outputs/CHM13_v1.0_dimer_concondance_illumina.bed,./input_outputs/CHM13_v1.0_dimer_concondance_hifi.bed
+
+
+ python3 plot_homopolymer_support.py \
+--bed CHM13_v0.9_homopolymer_edits_distribution_ILLUMINA.bed,CHM13_v0.9_homopolymer_edits_distribution_HiFi.bed \
+--bed2 CHM13_v1.0_homopolymer_edits_distribution_Illumina.bed,CHM13_v1.0_homopolymer_edits_distribution_HiFi.bed
