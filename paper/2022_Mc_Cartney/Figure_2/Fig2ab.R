@@ -3,8 +3,6 @@ library(scales)
 library(data.table)
 library(cowplot)
 
-setwd("T2T-Polishing/")
-
 BLUE="#377EB8"
 GREEN="#4DAF4A"
 
