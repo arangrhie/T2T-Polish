@@ -128,7 +128,7 @@ else
     echo "*** Found $target.filteredList. Skipping this step. ***"
   else
     $SCRIPT/src/samToErrorRate $target.filtered.sam $asm \
-      | awk -v l=$len_filt 'BEGIN{rid=""}{if($3 <= -1*l && $4 >= 75 && rid != $1){print $1; rid=$1}}' \
+      | python3 $SCRIPT/src/lenFiltUniq.py $len_filt 75 \
       > $target.filteredList
   fi
 
