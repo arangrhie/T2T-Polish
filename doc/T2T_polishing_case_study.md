@@ -146,7 +146,7 @@ google/deepvariant:"${BIN_VERSION}" \
 /opt/deepvariant/bin/run_deepvariant \
 --model_type "HYBRID_PACBIO_ILLUMINA" \
 --ref "${INPUT_DIR}"/chm13.draft_v0.9.chr20.fasta \
---reads "${INPUT_DIR}"/chm13.draft_v0.9.pcrfree.chr20.bam \
+--reads "${INPUT_DIR}"/chm13.draft_v0.9.illumina_hifi_hybrid.chr20.bam \
 --output_vcf "${OUTPUT_DIR}"/"${OUTPUT_VCF}" \
 --num_shards "${THREADS}" \
 --regions chr20 \
