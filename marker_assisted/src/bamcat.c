@@ -1050,7 +1050,7 @@ int sam_read1(tamFile fp, bam_header_t *header, bam1_t *b)
 			} else if (type == 'B') {
 				int32_t n = 0, Bsize, k = 0, size;
 				char *p;
-				if (str->l < 8) parse_error(fp->n_lines, "too few values in aux type B");
+				if (str->l < 5) parse_error(fp->n_lines, "too few values in aux type B");
 				Bsize = bam_aux_type2size(str->s[5]); // the size of each element
 				for (p = (char*)str->s + 6; *p; ++p) // count the number of elements in the array
 					if (*p == ',') ++n;
