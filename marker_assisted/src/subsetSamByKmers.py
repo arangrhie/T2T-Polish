@@ -45,16 +45,17 @@ for line in f:
       l = line.strip().split()
       isReverse=int(l[1]) & 16 > 0
       # if this maping is outside of our defined region, output all of them
-      if (int(l[3]) < start or int(l[3]) > end):
-         print line.strip()
+      #if (int(l[3]) < start or int(l[3]) > end):
+         #print line.strip()
+         # do nothing
+      #else:
+      if isReverse:
+         rid="%s_%d"%(l[0], 1)
       else:
-         if isReverse:
-            rid="%s_%d"%(l[0], 1)
-         else:
-            rid="%s_%d"%(l[0], 0)
-         if rid in rids:
-            pos=rids[rid]
-            if pos == int(l[3]):
-               l[4]="60"
-               print "\t".join(l)
+         rid="%s_%d"%(l[0], 0)
+      if rid in rids:
+         pos=rids[rid]
+         if pos == int(l[3]):
+            l[4]="60"
+            print "\t".join(l)
 f.close()
