@@ -174,7 +174,7 @@ main (int argc, char **argv) {
            qrySeq[core->l_qseq]='\0';
            lastid = id;
         }
-        char *alnStr = new char[qryLen*3];
+        string alnStr;
         uint32_t pos = 0;
 
         int errors = 0;
@@ -190,7 +190,7 @@ main (int argc, char **argv) {
                  else seqHi-=cl;
                  qrySeq+=cl;
                  for (int i = 0; i < cl; i++) {
-                    alnStr[pos] = 'N', //'-';
+                    alnStr += "N"; //'-';
                     pos++;
                  }
                  break;
@@ -207,9 +207,9 @@ main (int argc, char **argv) {
               for (int i = 0; i < cl; i++) {
                  if (toupper(*refSeq) == toupper(*qrySeq)) {
                     matches++;
-                    alnStr[pos] = toupper(*qrySeq); //'.';
+                    alnStr += toupper(*qrySeq); //'.';
                  } else {
-                    alnStr[pos] = 'N';
+                    alnStr += 'N';
                     errors++;
                  }
                  pos++;
@@ -225,15 +225,14 @@ main (int argc, char **argv) {
                break;
             case BAM_CREF_SKIP:
                for (int i = 0; i < cl; i++) {
-                  alnStr[pos] = 'N', //'-';
+                  alnStr += 'N'; //'-';
                   pos++;
                }
                refSeq+=cl;
-               len+=cl;
                break;
             case BAM_CDEL:
                for (int i = 0; i < cl; i++) {
-                  alnStr[pos] = 'N', //'-';
+                  alnStr += 'N'; //'-';
                   pos++;
                }
                errors+=cl;
@@ -246,11 +245,9 @@ main (int argc, char **argv) {
                 break;
             }
         }
-        alnStr[pos] = '\0';
 
         double idy = (1-((double) errors / len /*(seqHi-seqLow)*/ /*(refHigh - refLo + 1)*/)) * 100;
-        cout << id << "\t" << ref << "\t" << int(ceil(-1*idy/100*len)) << "\t" << idy << "\t0\t" << (isFwd == true ? seqLow : seqLen-seqHi) << "\t" << (isFwd == true ? seqHi : seqLen-seqLow) << "\t" << seqLen << "\t" <<  (isFwd == true ? 0 : 1) << "\t" << (isFwd == true ? refLo : refLen-refHigh) << "\t" << (isFwd == true ? refHigh : refLen-refLo) << "\t" << refLen << "\t" << len << "\t" << (seqHi-seqLow) << "\t" << (refHigh-refLo) << "\t" << matches << "\t" << errors << "\t" << strlen(alnStr) << "\t" << alnStr << endl;
-        delete[] alnStr;
+        cout << id << "\t" << ref << "\t" << int(ceil(-1*idy/100*len)) << "\t" << idy << "\t0\t" << (isFwd == true ? seqLow : seqLen-seqHi) << "\t" << (isFwd == true ? seqHi : seqLen-seqLow) << "\t" << seqLen << "\t" <<  (isFwd == true ? 0 : 1) << "\t" << (isFwd == true ? refLo : refLen-refHigh) << "\t" << (isFwd == true ? refHigh : refLen-refLo) << "\t" << refLen << "\t" << len << "\t" << (seqHi-seqLow) << "\t" << (refHigh-refLo) << "\t" << matches << "\t" << errors << "\t" << alnStr.length() << "\t" << alnStr << endl;
     }
     samclose(fp);
 return 0;
