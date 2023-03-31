@@ -10,11 +10,20 @@ fi
 
 ver=$2
 
+:<<'END'
 asm=../$ver.bed              # chr length
 telo=../$ver.telo.bed        # ends of chr
 exclude=../$ver.exclude.bed  # regions to exclude
 error=../$ver.error.bed      # Merqury asm only track
 pattern=../pattern/$ver      # seqrequester microsatellite
+END
+
+asm=$ver.bed
+telo=$ver.telo.bed
+exclude=$ver.exclude.bed
+error=$ver.error.bed
+pattern=pattern/$ver
+
 
 paf=$1
 pre=${paf/.paf/}
@@ -25,6 +34,9 @@ COL_HIG="153,102,255"  # purple
 
 LOW=`cat low_cutoff.txt`
 HIGH=`cat high_cutoff.txt`
+
+set -x
+set -o pipefail
 
 # Guppy 4.0.2
 # LOW=41.54
@@ -85,10 +97,10 @@ window=10000
 
 for coverage in $pre.low $pre.high
 do
-  bedtools window -w $window -c -a $coverage.bed    -b $pattern/microsatellite.GA.128.gt80.bed > $coverage.ga.bed
-  bedtools window -w $window -c -a $coverage.ga.bed -b $pattern/microsatellite.TC.128.gt80.bed > $coverage.tc.bed
-  bedtools window -w $window -c -a $coverage.tc.bed -b $pattern/microsatellite.GC.128.gt80.bed > $coverage.gc.bed
-  bedtools window -w $window -c -a $coverage.gc.bed -b $pattern/microsatellite.AT.128.gt80.bed > $coverage.at.bed
+  bedtools window -w $window -c -a $coverage.bed    -b $pattern/$ver.microsatellite.GA.128.gt80.bed > $coverage.ga.bed
+  bedtools window -w $window -c -a $coverage.ga.bed -b $pattern/$ver.microsatellite.TC.128.gt80.bed > $coverage.tc.bed
+  bedtools window -w $window -c -a $coverage.tc.bed -b $pattern/$ver.microsatellite.GC.128.gt80.bed > $coverage.gc.bed
+  bedtools window -w $window -c -a $coverage.gc.bed -b $pattern/$ver.microsatellite.AT.128.gt80.bed > $coverage.at.bed
   bedtools intersect -c -a $coverage.at.bed -b $error > $coverage.err.bed
 done
 
