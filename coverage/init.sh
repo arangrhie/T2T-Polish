@@ -7,8 +7,6 @@ if [[ -z $1 ]] || [[ -z $2 ]]; then
     exit 0
 fi
 
-export asset=$tools/asset
-
 asm=$1
 name=$2
 
@@ -19,12 +17,6 @@ fi
 
 if [ ! -e $name.fasta.fai ]; then
     ln -s $asm.fai $name.fasta.fai
-fi
-
-if [ ! -e gaps.bed ]; then
-        echo "
-        $asset/bin/detgaps $name.fasta > gaps.bed"
-        $asset/bin/detgaps $name.fasta > gaps.bed
 fi
 
 echo "# Get scaffold ends (1kb)"
