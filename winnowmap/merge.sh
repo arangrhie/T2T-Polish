@@ -6,6 +6,8 @@ if [ -z $1 ]; then
 fi
 
 prefix=$1
+
+module load samtools # load v1.15.1 or higher
 echo "\
 samtools merge -O bam -@$SLURM_CPUS_PER_TASK $prefix.bam *.sort.bam"
 samtools merge -O bam -@$SLURM_CPUS_PER_TASK $prefix.bam *.sort.bam
