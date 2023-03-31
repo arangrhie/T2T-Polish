@@ -34,9 +34,11 @@ fi
 
 
 ## Dependency: samtools, samToAlignment, meryl v1.3, subsetSamByKmers.py, samToErrorRate, SubFile
+module load samtools # samtools 1.15.1
 
 set -e
 set -x
+set -o pipefail
 
 alignment=$1  # input bam / cram file 
 target=$2     # chrX
@@ -93,10 +95,8 @@ else
       | awk '{if ($9 == 0) { print ">"$1"_"$5"_"$9"_"$10"_"$(NF-1); print $NF } else { print ">"$1"_"$5"_"$9"_"$12-$11"_"$(NF-1); print $NF}}' \
       > $target.aligned.fasta
 
-    # echo "Clean up $target.srt_id.bam $(ls $target.tmp.*)"
-    rm $target.srt_id.bam $target.tmp.*
   fi
-  
+
   if [ ! -s $target.alignment.posCount ]; then
     echo "Prepare $target.single.meryl"
     meryl count k=21 $target.fa output $target.meryl
@@ -110,9 +110,9 @@ else
     samtools view -h -O sam -@$cores $target.bam > $target.sam
     echo "python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam"
     python $SCRIPT/src/subsetSamByKmers.py $target.alignment.posCount $target.sam > $target.markers.sam
-    samtools view -@$cores -hb -o $target.markers.bam $target.markers.sam
+    samtools view -@$cores -hb -O bam -o $target.markers.bam $target.markers.sam
   fi
-  
+
   echo
   echo "# hard filter alignments < $len_filt kb to $target.filtered.sam"
   if [ -s $target.filtered.sam ]; then
@@ -146,8 +146,9 @@ samtools view -hb -@$cores -o $target.markersandlength.bam $target.filtered.sam
 echo "
 # Index"
 samtools index $target.markersandlength.bam
+samtools index $target.markers.bam
 
-echo "
-# Cleanup"
-rm -r $target.filtered.sam $target.sam $target.bam $target.align* $target.filteredList $target.meryl $target.single.meryl $target.fa $target.fa.fai $target.header
+# Cleanup
+rm -r $target.filtered.sam $target.sam $target.bam $target.align* $target.filteredList $target.meryl $target.single.meryl $target.fa $target.fa.fai $target.header $target.srt_id.bam $target.tmp.err
+
 
