@@ -9,6 +9,9 @@ pri=$1
 pri=${pri/.paf/}
 name=$2
 
+set -e
+set -o pipefail
+
 collect_stat() {
   in_paf=$1
   out_prefix=$2
@@ -124,7 +127,7 @@ collect_clipped $pri.paf $pri.w1k 1024 "$name"
 collect_coverage $pri.paf $pri 1024 "$name"
 
 # Per strand coverage
-#collect_coverage $pri.paf $pri 1024 "$name" 1
+collect_coverage $pri.paf $pri 1024 "$name" 1
 
 
 
