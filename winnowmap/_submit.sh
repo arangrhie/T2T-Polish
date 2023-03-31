@@ -21,6 +21,9 @@ fi
 path=`pwd`
 mkdir -p logs
 
+ln -s $ref
+ref=`basename $ref`
+
 if ! [[ -s repetitive_k15.txt ]]; then
   cpus=12
   mem=24g
@@ -40,7 +43,7 @@ if ! [[ -s repetitive_k15.txt ]]; then
 fi
 
 cpus=24
-mem=60g
+mem=120g
 partition=norm
 walltime=2-0
 name=map.$prefix
@@ -74,7 +77,7 @@ sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path
 cpus=12
 mem=8g
 name=filt.$prefix
-logs=logs/$name.%A.log
+log=logs/$name.%A.log
 script=$PIPELINE/filt.sh
 args="$prefix.bam"
 
@@ -85,7 +88,7 @@ sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > filt.jid
 
 name=sam2paf.$prefix
-logs=logs/$name.%A.log
+log=logs/$name.%A.log
 script=$PIPELINE/../coverage/sam2paf.sh
 args="$prefix.pri.bam $prefix.pri.paf"
 
