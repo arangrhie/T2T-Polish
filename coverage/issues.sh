@@ -6,6 +6,8 @@ if [[ "$#" -lt 4 ]]; then
   echo "  name:   name to appear on the .wig files"
   echo "  ver:    assembly version"
   echo "  platform: HiFi or ONT"
+  echo
+  echo "Required: pattern/ver/, ver.bed, ver.error.bed, ver.exclude.bed, ver.telo.bed"
   exit -1
 fi
 in_paf=$1
@@ -14,8 +16,11 @@ in=${in_paf/.paf/}
 ver=$3
 platform=$4
 
+set -x
+set -o pipefail
+
 # Collect wig files
-$tools/T2T-Polish/coverage/collect_summary.sh $in_paf $name
+$tools/T2T-Polish/coverage/collect_summary.sh $in_paf "$name"
 
 # Collect coverage statistics
 $tools/T2T-Polish/coverage/coverage_stat.sh $in.cov.wig
