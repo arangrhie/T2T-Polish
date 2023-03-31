@@ -10,6 +10,7 @@ fi
 in=$1
 out=${in/.bam/.pri.bam}
 
+module load samtools # load v1.15.1 or higher
 echo "
 samtools view -F0x104 -@$SLURM_CPUS_PER_TASK -hb $in > $out"
 samtools view -F0x104 -@$SLURM_CPUS_PER_TASK -hb $in > $out
