@@ -33,21 +33,17 @@ out=`echo $out | sed 's/.fasta.$//g' | sed 's/.fasta$//g' | sed 's/.fa$//g' | se
 out=`echo $out | sed 's/.fastq.$//g' | sed 's/.fastq$//g' | sed 's/.fq$//g' | sed 's/.fastq.gz$//g' | sed 's/.fq.gz$//g'`
 out=$out.$i
 
+set -ex
+set -o pipefail
+
 if ! [[ -s $out.sam ]]; then
-  echo "
-  Align
-  $tools/Winnowmap/bin/winnowmap --MD -W repetitive_k15.txt -ax $map $opt -t$cpus $ref $reads > $out.sam
-  "
+  #$tools/Winnowmap/bin/winnowmap --MD -W repetitive_k15.txt -y -ax $map $opt -t$cpus $ref $reads > $out.sam
   $tools/Winnowmap/bin/winnowmap --MD -W repetitive_k15.txt -ax $map $opt -t$cpus $ref $reads > $out.sam
 fi
 
 
 if ! [[ -s $out.sort.bam ]]; then
-  module load samtools
-
-  echo "
-  Sort
-  samtools sort -@$cpus -m2G -T $out.tmp -O bam -o $out.sort.bam $out.sam"
+  module load samtools # load v1.15.1+
   samtools sort -@$cpus -m2G -T $out.tmp -O bam -o $out.sort.bam $out.sam
 
   echo "
