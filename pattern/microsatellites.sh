@@ -2,6 +2,7 @@
 
 if [[ -z $1 ]]; then
   echo "Usage: ./microsatellites.sh in.fasta"
+  echo "Collect microsatellite repeat patterns. Output files will be written in <in> dir."
   exit -1
 fi
 fa=$1
