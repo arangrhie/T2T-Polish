@@ -9,7 +9,7 @@ fi
 
 cpu=$SLURM_CPUS_PER_TASK
 
-module load minimap2/2.17
+module load minimap2/2.26
 
 # Download k8 under $tools/k8 (https://github.com/lh3/minimap2/tree/master/misc/README.md)
 # cd $tools/k8
@@ -18,13 +18,13 @@ module load minimap2/2.17
 
 if [[ $1 =~ .bam$ ]] || [[ $1 =~ .cram$ ]]; then
   echo "
-  samtools view -h -@$cpu $1 | $tools/k8/k8 /usr/local/apps/minimap2/2.17/misc/paftools.js sam2paf - | cut -f1-16 - > $2"
-  samtools view -h -@$cpu $1 | $tools/k8/k8 /usr/local/apps/minimap2/2.17/misc/paftools.js sam2paf - | cut -f1-16 - > $2
+  samtools view -h -@$cpu $1 | $tools/k8/k8 /usr/local/apps/minimap2/2.26/misc/paftools.js sam2paf - | cut -f1-16 - > $2"
+  samtools view -h -@$cpu $1 | $tools/k8/k8 /usr/local/apps/minimap2/2.26/misc/paftools.js sam2paf - | cut -f1-16 - > $2
 else
   ## Add -L for long cs tag form
   echo "
-  $tools/k8/k8 /usr/local/apps/minimap2/2.17/misc/paftools.js sam2paf $1 | cut -f1-16 - > $2"
-  $tools/k8/k8 /usr/local/apps/minimap2/2.17/misc/paftools.js sam2paf $1 | cut -f1-16 - > $2
+  $tools/k8/k8 /usr/local/apps/minimap2/2.26/misc/paftools.js sam2paf $1 | cut -f1-16 - > $2"
+  $tools/k8/k8 /usr/local/apps/minimap2/2.26/misc/paftools.js sam2paf $1 | cut -f1-16 - > $2
 
 fi
 
