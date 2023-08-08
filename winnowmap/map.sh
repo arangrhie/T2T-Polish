@@ -6,6 +6,7 @@ if [[ "$#" -lt 2 ]]; then
   echo "Requires input.fofn and repetitive_k15.txt"
   echo "  ref    : ref.fa"
   echo "  map    : Provide one from map-ont map-pb map-pb-clr"
+  echo "  opt    : additional options. add -y for adding methylation tags"
   echo "  [i]    : fq file to proceed in line i of input.fofn"
   echo
   echo "  output : input fq prefix appended with .sam and an indexed .sort.bam"
@@ -37,8 +38,8 @@ set -ex
 set -o pipefail
 
 if ! [[ -s $out.sam ]]; then
-  #$tools/Winnowmap/bin/winnowmap --MD -W repetitive_k15.txt -y -ax $map $opt -t$cpus $ref $reads > $out.sam
-  $tools/Winnowmap/bin/winnowmap --MD -W repetitive_k15.txt -ax $map $opt -t$cpus $ref $reads > $out.sam
+  module load winnowmap/2.03
+   winnowmap --MD -W repetitive_k15.txt -ax $map -I12g $opt -t$cpus $ref $reads > $out.sam
 fi
 
 
