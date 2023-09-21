@@ -44,7 +44,7 @@ if [[ ! -s bam.list ]]; then
   log=logs/$name.%A_%a.log
 
   LEN=`wc -l $fastq_map | awk '{print $1}'`
-  extra="--gres=lscratch:700 $extra"
+  extra="--gres=lscratch:900 $extra"
   if [[ -z $line_num ]]; then
     extra="$extra --array=1-$LEN"
   else
