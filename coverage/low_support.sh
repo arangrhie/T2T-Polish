@@ -4,10 +4,11 @@ if ! [[ "$#" -eq 3 ]]; then
   echo "Usage: ./low_support.sh in.paf ver platform"
   echo "  in.paf: bam2paf"
   echo "  ver:    assembly version prefix"
-  echo "  platform: HiFi or ONT"
+  echo "  platform: HiFi, ONT, or Hybrid"
   exit -1
 fi
 
+paf=$1
 ver=$2
 
 :<<'END'
@@ -25,7 +26,6 @@ error=$ver.error.bed
 pattern=pattern/$ver
 
 
-paf=$1
 pre=${paf/.paf/}
 
 COL_LOW="204,0,0"      # red
@@ -35,7 +35,6 @@ COL_HIG="153,102,255"  # purple
 LOW=`cat low_cutoff.txt`
 HIGH=`cat high_cutoff.txt`
 
-set -x
 set -o pipefail
 
 # Guppy 4.0.2
@@ -47,6 +46,7 @@ set -o pipefail
 # HIGH=90
 
 export asset=$tools/asset
+module load bedtools
 
 if [[ "$3" == "ONT" ]] || [[ "$3" == "ont" ]]; then
   asset_opt=""
@@ -54,37 +54,29 @@ if [[ "$3" == "ONT" ]] || [[ "$3" == "ont" ]]; then
 elif [[ "$3" == "HiFi" ]] || [[ "$3" == "hifi" ]]; then
   asset_opt="-l 0"
   clip_thresh="10"
+elif [[ "$3" == "Hybrid" ]] || [[ "$3" == "hybrid" ]]; then
+  asset_opt="-l 0"
+  clip_thresh="20"
 else
   echo "$3 not recognizable. Exit."
   exit -1
 fi
 
-echo "#### $3 Mode ####"
+echo "#### $3 Mode. LOW: $LOW, HIGH: $HIGH ####"
 
-echo "
-# Collect low coverage with Asset; $asset_opt"
-echo "
-$asset/bin/ast_pb $asset_opt -m $LOW -M 10000000 $paf > $pre.bed
-"
+set -x
+echo "# Collect low coverage with Asset; $asset_opt"
 $asset/bin/ast_pb $asset_opt -m $LOW -M 10000000 $paf > $pre.bed
 rm pb.cov.wig
 
-module load bedtools
-
-echo "
-# Extract low coverage"
+echo "# Extract low coverage"
 bedtools subtract -a $asm -b $pre.bed | bedtools merge -d 5000 -i - | awk -v col=$COL_LOW '{print $0"\tLow\t100\t.\t"$2"\t"$3"\t"col}' > $pre.low.bed
 
-echo "
-# Collect high coverage"
-echo "
+echo "# Collect high coverage"
 $asset/bin/ast_pb $asset_opt -m 0 -M $HIGH $paf > $pre.bed
-"
-$asset/bin/ast_pb $asset_opt -m 0 -M $HIGH $paf > $pre.bed
-rm pb.cov.wig
+# rm pb.cov.wig
 
-echo "
-# Extract high coverage"
+echo "# Extract high coverage"
 bedtools subtract -a $asm -b $pre.bed | bedtools merge -d 5000 -i - | awk -v col=$COL_HIG '{print $0"\tHigh\t100\t.\t"$2"\t"$3"\t"col}' > $pre.high.bed
 
 echo "
