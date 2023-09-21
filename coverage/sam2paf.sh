@@ -10,6 +10,7 @@ fi
 cpu=$SLURM_CPUS_PER_TASK
 
 module load minimap2/2.26
+module load samtools
 
 # Download k8 under $tools/k8 (https://github.com/lh3/minimap2/tree/master/misc/README.md)
 # cd $tools/k8
