@@ -44,12 +44,12 @@ if [[ ! -d dv_$MODE/examples ]]; then
   echo "Step 1. make_examples"
   cpus=$N_SHARD
   mem=$(($cpus*2))g
-  gres="lscratch:500" # use /lscratch/ allow up to 500 GB
+  gres="lscratch:1000" # use /lscratch/ allow up to 1000 GB
   name=dv_step1
   script=$PIPELINE/deepvariant/step1.sh
   args="$REF $BAM $SAMPLE"
   partition=norm
-  walltime=24:00:00
+  walltime=12:00:00
   path=`pwd`
   log=logs/$name.%A.log
 
@@ -78,7 +78,7 @@ fi
 echo "Step 2. variant_call"
 
 cpus=12
-gres="lscratch:50,gpu:p100:1" # use /lscratch/ allow up to 50GB
+gres="lscratch:50,gpu:p100:4" # use /lscratch/ allow up to 50GB
 name=dv_step2
 script=$PIPELINE/deepvariant/step2.sh
 args=""

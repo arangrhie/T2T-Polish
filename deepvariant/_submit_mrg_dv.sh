@@ -29,10 +29,15 @@ cpus=12
 mem=24g
 partition=norm
 walltime=8:00:00
-scipt=$PIPELINE/deepvariant/merge_hybrid.sh
+script=$PIPELINE/deepvariant/merge_hybrid.sh
 args="$hifi_bam $ilmn_bam $out.bam"
 name=mrg.$out
 log=logs/$name.%A.log
+
+set -o pipefail
+set -e
+
+if ! [[ -s $out.bam ]]; then
 
 set -x
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem  \
@@ -43,6 +48,7 @@ sbatch -J $name --cpus-per-task=$cpus --mem=$mem  \
 set +x
 
 wait_for=`tail -n1 mrg.jid`
+fi
 
-sh $PIPELINE/deepvariant/_submit_deepvariant.sh $ref $out.dedup.bam $mode $sample $wait_for
+sh $PIPELINE/deepvariant/_submit_deepvariant.sh $ref $out.bam $mode $sample $wait_for
 
