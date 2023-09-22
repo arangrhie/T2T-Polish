@@ -1,30 +1,26 @@
 #!/bin/bash
 
-if ! [[ "$#" -eq 3 ]]; then
-  echo "Usage: ./low_support.sh in.paf ver platform"
-  echo "  in.paf: bam2paf"
-  echo "  ver:    assembly version prefix"
-  echo "  platform: HiFi, ONT, or Hybrid"
+if ! [[ "$#" -eq 4 ]]; then
+  echo "Usage: ./low_support.sh in.paf ver platform pattern"
+  echo "  in.paf    bam2paf"
+  echo "  ver       assembly version prefix"
+  echo "  platform  HiFi, ONT, or Hybrid"
+  echo "  pattern   path to pattern folder" 
   exit -1
 fi
 
 paf=$1
 ver=$2
+pattern=$4
 
-:<<'END'
-asm=../$ver.bed              # chr length
-telo=../$ver.telo.bed        # ends of chr
-exclude=../$ver.exclude.bed  # regions to exclude
-error=../$ver.error.bed      # Merqury asm only track
-pattern=../pattern/$ver      # seqrequester microsatellite
-END
+# link pattern dir
+ln -sf $pattern pattern
 
-asm=$ver.bed
-telo=$ver.telo.bed
-exclude=$ver.exclude.bed
-error=$ver.error.bed
-pattern=pattern/$ver
-
+asm=pattern/$ver.bed               # chr length
+telo=pattern/$ver.telo.bed         # telomere annotation
+exclude=pattern/$ver.exclude.bed   # region to exclude
+error=pattern/$ver.error.bed       # Merqury asm_only track, merged
+pattern=pattern/$ver               # seqrequester microsatellite annotation
 
 pre=${paf/.paf/}
 
@@ -35,6 +31,7 @@ COL_HIG="153,102,255"  # purple
 LOW=`cat low_cutoff.txt`
 HIGH=`cat high_cutoff.txt`
 
+set -e
 set -o pipefail
 
 # Guppy 4.0.2
@@ -56,7 +53,7 @@ elif [[ "$3" == "HiFi" ]] || [[ "$3" == "hifi" ]]; then
   clip_thresh="10"
 elif [[ "$3" == "Hybrid" ]] || [[ "$3" == "hybrid" ]]; then
   asset_opt="-l 0"
-  clip_thresh="20"
+  clip_thresh="8"
 else
   echo "$3 not recognizable. Exit."
   exit -1
@@ -64,8 +61,10 @@ fi
 
 echo "#### $3 Mode. LOW: $LOW, HIGH: $HIGH ####"
 
-set -x
 echo "# Collect low coverage with Asset; $asset_opt"
+set -x
+
+#:<<'END'
 $asset/bin/ast_pb $asset_opt -m $LOW -M 10000000 $paf > $pre.bed
 rm pb.cov.wig
 
@@ -74,7 +73,7 @@ bedtools subtract -a $asm -b $pre.bed | bedtools merge -d 5000 -i - | awk -v col
 
 echo "# Collect high coverage"
 $asset/bin/ast_pb $asset_opt -m 0 -M $HIGH $paf > $pre.bed
-# rm pb.cov.wig
+mv pb.cov.wig $pre.cov.asset.wig
 
 echo "# Extract high coverage"
 bedtools subtract -a $asm -b $pre.bed | bedtools merge -d 5000 -i - | awk -v col=$COL_HIG '{print $0"\tHigh\t100\t.\t"$2"\t"$3"\t"col}' > $pre.high.bed
