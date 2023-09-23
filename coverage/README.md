@@ -3,6 +3,7 @@
 Once the alignments are ready in paf format, various tracks and statistics can be generated.
 
 ## Dependencies
+* [seqtk](https://github.com/lh3/seqtk)
 * [seqrequester](https://github.com/marbl/seqrequester)
 * [asset](https://github.com/dfguan/asset/)
 * [bedtools](https://bedtools.readthedocs.io/en/latest/)
@@ -138,21 +139,26 @@ Adjust the file paths below before running this script.
 
 ### Prerequisites
 
-Unlike the rest, this script requires several file paths. `asm` and `telo` can be generated with [`init.sh`](init.sh).
+`issues.sh` requires several files under `pattern`.  
+`asm`, `telo`, `exclude`, `pattern` will be generated with [`init.sh`](init.sh).
 
 * asm    : `ver`.bed; Bed file containing regions as chromosome (scaffold) length.
-* telo   : `ver`.telo.bed; Ends of chromosomes to exclude from being flagged as low coverage due to natural sequencing coverage dropouts. Could be an empty file.
+* telo   : `ver`.telo.bed; Both ends of each chromosome. Will be excluded from flagging as lower coverage is expected due to natural sequencing coverage dropouts. Could be an empty file.
 * error  : `ver`.error.bed; Regions of known consensus base errors. [Merqury](https://github.com/arangrhie/T2T-Polish/tree/master/merqury) asm only track.
-* exclude: `ver`.exclude.bed; Any regions to exclude, e.g. known collapses. Could be an empty file.
-* pattern: pattern/`ver` folder; containing results from [seqrequester](https://github.com/arangrhie/T2T-Polish/tree/master/pattern).
+* exclude: `ver`.exclude.bed; Any additional regions to exclude, e.g. known collapses or gaps. Could be an empty file.
+* pattern: pattern/`ver` folder; containing microsatellite patterns.
+
+### Hybrid mode
+Asset runs without excluding any bases at the beginning or end of a read alignment while collecting coverage (`-l 0`).  
+Clipping threshold is set to `5`, flagging regions when > 5 reads or > 5% of the reads have clippings.
 
 ### HiFi mode
-
-Asset runs without excluding any bases at the beginning or end of a read alignment while collecting coverage (`-l 0`). Clipping threshold is set to `10`, flagging regions when > 10 reads or > 10% of the reads have clippings.
+Asset runs without excluding any bases at the beginning or end of a read alignment while collecting coverage (`-l 0`).  
+Clipping threshold is set to `10`, flagging regions when > 10 reads or > 10% of the reads have clippings.
 
 ### ONT mode
-
-Asset runs with default options. Clipping threshold is set to `15`, flagging regions when > 15 reads or > 15% of the reads have clippings.
+Asset runs with default options.  
+Clipping threshold is set to `15`, flagging regions when > 15 reads or > 15% of the reads have clippings.
 
 ### Output file
 
