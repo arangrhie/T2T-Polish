@@ -3,21 +3,47 @@
 Once the alignments are ready in paf format, various tracks and statistics can be generated.
 
 ## Dependencies
-* [Asset](https://github.com/dfguan/asset/)
+* [seqrequester](https://github.com/marbl/seqrequester)
+* [asset](https://github.com/dfguan/asset/)
 * [bedtools](https://bedtools.readthedocs.io/en/latest/)
 * java
 
 ## Prerequisites
-All scripts requires `$tools` variable to be set prior to running.
-The `$tools` is the dir path where this github repository has been cloned under.
+All scripts requires `$tools` variable to be set prior to running.  
+The `$tools` is the dir path where this github repository has been cloned under.  
+`seqrequester` and `asset` should be also installed under `$tools`.
 
 ## Quick start
 ```
-Usage: ./issues.sh in.paf name ver platform
+# This step needs to be run only once per assembly.
+mkdir pattern && cd pattern
+$tools/T2T-Polish/coverage/init.sh /path/to/asm_ver.fasta
+ln -s /path/to/merqury/asm_ver_only.bed asm_ver.error.bed  # symlink asm_only.bed file from Merqury. Hybrid kmers recommended.
+
+cd /path/to/mappings
+
+# Run this step on each in.paf file per platform.
+$tools/T2T-Polish/coverage/issues.sh in.paf name ver platform pattern
+
+# Load *.cov.wig and *.issues.bed on IGV to visually inspect coverage and related issues.
+```
+
+Here is the discription of `init.sh` and `issues.sh`:
+```
+$tools/T2T-Polish/coverage/init.sh
+Usage: ./init.sh <asm.fasta>
+  <asm.fasta>: absolute path to asm.fasta,
+               expecting to have asm.fasta.fai in the same path
+
+$tools/T2T-Polish/coverage/issues.sh
+Usage: ./issues.sh in.paf name ver platform pattern
   in.paf   : input paf file
   name     : name to appear on the .wig files
   ver      : assembly version
-  platform : HiFi or ONT
+  platform HiFi, ONT or Hybrid
+  pattern  path to pattern folder
+
+Required: pattern/ver/, pattern/ver.bed, pattern/ver.error.bed, pattern/ver.exclude.bed, pattern/ver.telo.bed
 ```
 
 This runs the following scripts:
@@ -34,10 +60,10 @@ Usage: ./collect_summary.sh in.paf name
 ```
 By default, using a given paf file, this script generates various summary `.wig` tracks:
 * collect_stat: all and per-strand read length, MQ, Idy, and strand ratio in every 10kb window
-* collect_clipped: clipped reads in every 1024 bp window
-* collect_coverage: coverage tracks in every 1024 bp
+* collect_coverage: coverage and clipped (>100bp) read tracks in every 1024 bp
 
-Internally, this launches several paf tools that could be run independently. The track will be named after `name`. Use quotes (`” “`) if the name contains spaces.
+Internally, this launches several paf tools that could be run independently.<br>
+The track will be displayed with as `name`. Use quotes (`" "`) if the name contains spaces.
 
 
 ### pafToMinAvgMedMaxWig.jar
@@ -63,27 +89,16 @@ java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToStrandedWig.jar <in.paf> <name>
   stdout : .wig format.
 ```
 
-### pafToClippedWig.jar
+### pafToCovClippedWig.jar
 
-Generate `abs`olute or `norm`alized counts of clipped read tracks in every `span` bp; if the soft-clipped or hard-clipped bases are over `min-clipped`.
+Generate coverage (read counts), `abs`olute and `norm`alized counts of clipped and total read tracks in every `span` bp; if the soft-clipped or hard-clipped bases are over `min-clipped`.
 
 ```
-java -jar -Xmx3g $tools/T2T-Polish/paf_util/pafToClippedWig.jar <in.paf> <name> <span> <type> [min-clipped]
-	<name>        : name of this track. String
-	<span>        : span of the interval. INT
-	<type>        : abs | norm. abs = absolute, norm=normalized by total reads
-	[min-clipped] : minimum num. of clipped bases. DEFAULT=100
-	stdout: .wig format.
-```
-
-### pafToCovWig.jar
-
-Generate coverage tracks (read counts) in every `span` bp.
-```
-java -jar -Xmx8g $tools/T2T-Polish/paf_util/pafToCovWig.jar <in.paf> <name> <span>
-	<name> : name of this track. String
-	<span> : span of the interval. INT
-	stdout : .wig format.
+Usage: java -jar -Xmx8g pafToCovClippedWig.jar <in.paf> <name-prefix> <span> <out-prefix> [min-clipped]
+  name-prefix name prefix of the tracks. String
+  span        span of the interval. INT
+  out-prefix  output prefix.
+  min-clipped minimum num. of clipped bases. DEFAULT=100. OPTIONAL.
 ```
 
 ## Coverage mean and SD
@@ -113,10 +128,11 @@ This script outputs the followings:
 This script generates the `issues.bed` file, reported in [CHM13-Issues](https://github.com/marbl/CHM13-issues) repo.
 
 ```
-Usage: ./low_support.sh in.paf ver platform
-  in.paf  : bam2paf
-  ver     : assembly version prefix
-  platform: HiFi or ONT
+Usage: ./low_support.sh in.paf ver platform pattern
+  in.paf    sam2paf
+  ver       assembly version prefix
+  platform  HiFi, ONT or Hybrid
+  pattern   path to pattern folder
 ```
 Adjust the file paths below before running this script.
 

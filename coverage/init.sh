@@ -10,8 +10,6 @@ fi
 asm=$1
 name=`echo $asm | sed 's/\.gz$//g' | sed 's/\.fa$//g' | sed 's/\.fasta$//g'`
 
-mkdir -p pattern && cd pattern
-
 if [[ "$asm" == "*\.gz" ]]; then
   pigz -dc $asm > $name.fa
 else
