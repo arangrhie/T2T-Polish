@@ -34,14 +34,6 @@ HIGH=`cat high_cutoff.txt`
 set -e
 set -o pipefail
 
-# Guppy 4.0.2
-# LOW=41.54
-# HIGH=415.4
-
-# Guppy 5
-# LOW=10
-# HIGH=90
-
 export asset=$tools/asset
 module load bedtools
 
@@ -53,7 +45,7 @@ elif [[ "$3" == "HiFi" ]] || [[ "$3" == "hifi" ]]; then
   clip_thresh="10"
 elif [[ "$3" == "Hybrid" ]] || [[ "$3" == "hybrid" ]]; then
   asset_opt="-l 0"
-  clip_thresh="8"
+  clip_thresh="5"
 else
   echo "$3 not recognizable. Exit."
   exit -1
@@ -80,9 +72,9 @@ bedtools subtract -a $asm -b $pre.bed | bedtools merge -d 5000 -i - | awk -v col
 
 echo "
 # Collect clipped.bed using clip_*.wig from collect_summary.sh"
-java -jar -Xmx1g $tools/T2T-Polish/paf_util/wigToBed.jar $pre.w1k.clip_abs.wig  | awk -v t=$clip_thresh '$NF>t' | bedtools merge -i - > $pre.w1k.clip_abs.bed
-java -jar -Xmx1g $tools/T2T-Polish/paf_util/wigToBed.jar $pre.w1k.clip_norm.wig | awk -v t=$clip_thresh '$NF>t' | bedtools merge -i - > $pre.w1k.clip_norm.bed
-cat $pre.w1k.clip_*.bed | bedtools sort -i - | bedtools merge -i - | awk -v col=$COL_CLP '{print $0"\tClipped\t100\t.\t"$2"\t"$3"\t"col}' > clipped.bed
+java -jar -Xmx1g $tools/T2T-Polish/paf_util/wigToBed.jar $pre.clip_abs.wig  | awk -v t=$clip_thresh '$NF>t' | bedtools merge -i - > $pre.clip_abs.bed
+java -jar -Xmx1g $tools/T2T-Polish/paf_util/wigToBed.jar $pre.clip_norm.wig | awk -v t=$clip_thresh '$NF>t' | bedtools merge -i - > $pre.clip_norm.bed
+cat $pre.clip_*.bed | bedtools sort -i - | bedtools merge -i - | awk -v col=$COL_CLP '{print $0"\tClipped\t100\t.\t"$2"\t"$3"\t"col}' > clipped.bed
 
 window=10000
 
