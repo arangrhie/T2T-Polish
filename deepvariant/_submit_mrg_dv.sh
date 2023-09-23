@@ -28,7 +28,7 @@ path=$PWD
 cpus=12
 mem=24g
 partition=norm
-walltime=8:00:00
+walltime=12:00:00
 script=$PIPELINE/deepvariant/merge_hybrid.sh
 args="$hifi_bam $ilmn_bam $out.bam"
 name=mrg.$out
@@ -49,6 +49,21 @@ set +x
 
 wait_for=`tail -n1 mrg.jid`
 fi
+
+name=sam2paf.$out
+log=logs/$name.%A.log
+script=$PIPELINE/coverage/sam2paf.sh
+args="$out.bam $out.pri.paf"
+
+jid=`tail -n1 filt.jid`
+extra="--dependency=afterok:$wait_for"
+
+set -x
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem \
+       --partition=$partition \
+       -D $path $extra --time=$walltime \
+       --error=$log --output=$log $script $args
+set +x
 
 sh $PIPELINE/deepvariant/_submit_deepvariant.sh $ref $out.bam $mode $sample $wait_for
 

@@ -19,5 +19,4 @@ set -x
 samtools merge -@$SLURM_CPUS_PER_TASK -O bam -o $BAM_HYBR $BAM_HIFI $BAM_ILMN
 samtools index $BAM_HYBR
 
-$tools/T2T-Polish/coverage/sam2paf.sh $BAM_HYBR ${BAM_HYBR/.bam/.paf}
 
