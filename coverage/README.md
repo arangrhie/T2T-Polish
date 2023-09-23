@@ -5,6 +5,7 @@ Once the alignments are ready in paf format, various tracks and statistics can b
 ## Dependencies
 * [seqtk](https://github.com/lh3/seqtk)
 * [seqrequester](https://github.com/marbl/seqrequester)
+* [minimap2 and k8](https://github.com/lh3/minimap2) for sam2paf.js. See [misc](https://github.com/lh3/minimap2/tree/master/misc)
 * [asset](https://github.com/dfguan/asset/)
 * [bedtools](https://bedtools.readthedocs.io/en/latest/)
 * java
