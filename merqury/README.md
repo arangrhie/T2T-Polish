@@ -41,13 +41,26 @@ meryl greater-than 1 IlluminaPCRfree.k21.meryl output illm.gt1.meryl
 meryl greater-than 1 hifi20k.k21.meryl output hifi.gt1.meryl
 ```
 
-Next, matching the diploid (2-copy) peak to 35x:
+Then, union the two dbs
+```
+meryl union-sum illm.gt1.meryl hifi.gt1.meryl output hybrid.meryl
+```
+
+In one command line:
+```
+meryl union-sum [ greater-than 1 IlluminaPCRfree.k21.meryl ] [ greater-than 1 hifi20k.k21.meryl ] output hybrid.meryl
+```
+
+Several tweaks were applied to match the coverage differences in the two dbs, which is however no longer recommended.  
+Below are kept as a legacy for records, as was taken in the McCartney et al. paper.  
+
+After counting, count frequencies were adjusted to match the diploid (2-copy) peak to 35x:
 ```
 meryl divide-round 3 illm.gt1.meryl output illm.gt1.div3.meryl
 meryl increase 4 hifi.gt1.meryl output hifi.gt1.add4.meryl
 ```
 
-Finally, union the two dbs and set the frequency to the maximum observed in the two datatypes:
+Then, the union of the two dbs were performed, setting the frequency to the maximum observed:
 ```
 meryl union-max illm.gt1.div3.meryl hifi.gt1.add4.meryl output hybrid.meryl
 ```
