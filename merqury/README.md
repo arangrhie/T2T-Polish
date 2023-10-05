@@ -3,7 +3,7 @@
 Merqury was run three times using `Illumina` `HiFi` and `hybrid` 21-mer databases during evaluation. We recommend using the `hybrid` k-mer db for evaluating CHM13 assemblies.
 
 ## Dependencies
-* [Meryl v1.3](https://github.com/marbl/meryl)
+* [Meryl v1.4.1](https://github.com/marbl/meryl)
 * [Merqury](https://github.com/marbl/merqury)
 
 Pre-built CHM13 databases are downloadable from here:
