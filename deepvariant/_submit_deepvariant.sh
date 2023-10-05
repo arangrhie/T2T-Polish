@@ -43,7 +43,7 @@ mkdir -p logs
 if [[ ! -d dv_$MODE/examples ]]; then
   echo "Step 1. make_examples"
   cpus=$N_SHARD
-  mem=$(($cpus*2))g
+  mem=$(($cpus*2.5))g
   gres="lscratch:1000" # use /lscratch/ allow up to 1000 GB
   name=dv_step1
   script=$PIPELINE/deepvariant/step1.sh
