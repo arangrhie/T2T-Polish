@@ -2,6 +2,10 @@
 
 if [[ "$#" -lt 3 ]] ; then
   echo "Usage: ./_submit.sh ref.fasta prefix map [wm_opt]"
+  echo "  ref.fasta  reference to align"
+  echo "  prefix     output prefix"
+  echo "  map        mapping mode. map-pb for HiFi, map-ont for ONT, map-pb-clr for CLR."
+  echo "  wm_opt     winnowmap optional arguments. i.e. -y for adding methylation tags."
   echo "  Required: input.fofn"
   exit -1
 fi
