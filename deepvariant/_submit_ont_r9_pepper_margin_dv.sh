@@ -43,6 +43,7 @@ sbatch -J $name \
   --output=$log \
   $script $args > ont_dv.jid
 set +x
+cat ont_dv.jid
 
 ## Merge
 wait_for=`cat ont_dv.jid | tail -n1`
@@ -50,7 +51,12 @@ wait_for=`cat ont_dv.jid | tail -n1`
 mem=8g
 name=ont_dv_mrg.$bam
 script=$tools/T2T-Polish/deepvariant/merge_per_chr_vcfs.sh
-args="dv_ONT_R9_MQ$mq dv_ONT_R9_MQ$mq"
+args="dv_ONT_R9_ dv_ONT_R9"
+if [[ $mq -eq -1 ]]; then
+  args="${args}"
+else
+  args="${args}_MQ$mq"
+fi
 partition=quick
 walltime=30:00
 extra="--dependency=afterok:$wait_for"
@@ -63,6 +69,7 @@ sbatch -J $name \
   $extra --time=$walltime \
   --error=$log \
   --output=$log \
-  $script $args
+  $script $args > ont_dv.mrg.jid
 set +x
+cat ont_dv.mrg.jid
 
