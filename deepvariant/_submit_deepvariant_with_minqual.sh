@@ -15,9 +15,7 @@ MINQUAL=$5 # optional
 wait_for=$6 # optional
 N_SHARD=48
 
-#PIPELINE=$tools/T2T-Polish
-# For debugging
-PIPELINE=/data/Phillippy/projects/primate_T2T/polishing/mapping
+PIPELINE=$tools/T2T-Polish
 
 # Check $MODE is valid
 if [[ $MODE == "WGS" || $MODE == "PACBIO" || $MODE == "ONT_R104" || $MODE == "HYBRID_PACBIO_ILLUMINA" ]]; then
@@ -46,7 +44,7 @@ mkdir -p logs
 if [[ ! -d dv_$MODE\_MQ$MINQUAL/examples ]]; then
   echo "Step 1. make_examples"
   cpus=$N_SHARD
-  mem=$(($cpus*2))g
+  mem=$(($cpus*3))g
   gres="lscratch:1000" # use /lscratch/ allow up to 1000 GB
   name=dv_step1_mq$MINQUAL
   script=$PIPELINE/deepvariant/step1_with_minqual.sh
