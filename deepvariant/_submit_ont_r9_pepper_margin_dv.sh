@@ -22,7 +22,7 @@ name=ont_dv.$bam
 script=$tools/T2T-Polish/deepvariant/ont_r9_pepper_margin_dv.sh
 args="$bam $ref $mq"
 partition=gpu
-walltime=24:00:00
+walltime=2:00:00
 path=`pwd`
 extra="--array=1-$NR"
 
@@ -37,7 +37,7 @@ set -x
 sbatch -J $name \
   --cpus-per-task=$cpus --mem=$mem --partition=$partition \
   -D $path \
-  --gres=gpu:p100:4,lscratch:20 \
+  --gres=gpu:k80:4,lscratch:10 \
   $extra --time=$walltime \
   --error=$log \
   --output=$log \
