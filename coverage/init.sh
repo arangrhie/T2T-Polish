@@ -12,7 +12,7 @@ name=`echo $asm | sed 's/\.gz$//g' | sed 's/\.fa$//g' | sed 's/\.fasta$//g'`
 
 if [[ "$asm" == "*\.gz" ]]; then
   pigz -dc $asm > $name.fa
-else
+elif [[ ! -s $name.fa ]]; then
   ln -sf $asm     $name.fa
   ln -sf $asm.fai $name.fa.fai
 fi
