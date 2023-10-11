@@ -19,6 +19,6 @@ module load bcftools
 module load deepvariant
 
 set -x
-bcftools concat -D --threads $cpus --no-version -Oz -o $out.vcf.gz -f r9_files_to_mrg.list
+bcftools concat -D -a --threads $cpus --no-version -Oz -o $out.vcf.gz -f r9_files_to_mrg.list
 bcftools index  $out.vcf.gz
 vcf_stats_report --input_vcf $out.vcf.gz --outfile_base $out
