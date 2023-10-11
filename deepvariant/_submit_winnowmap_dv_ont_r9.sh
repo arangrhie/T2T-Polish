@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [[ "$#" -lt 2 ]]; then
+if [[ "$#" -lt 3 ]]; then
   echo "Usage: \$tools/T2T-Polish/deepvariant/_submit_winnowmap_dv_ont_r9.sh ref.fa out-prefix mq [jid]"
   echo "  ref         reference fasta. REQUIRES .fai file in the same place"
   echo "  out-prefix  output prefix"
@@ -18,7 +18,7 @@ jid=$4
 map=map-ont
 
 if [[ -z $jid ]]; then
-  echo $tools/T2T-Polish/winnowmap/_submit.sh $ref $out $map
+  $tools/T2T-Polish/winnowmap/_submit.sh $ref $out $map
   jid=`cat filt.jid | tail -n1`
 else
   echo "Skip submitting winnowmap. Wait for $jid"
