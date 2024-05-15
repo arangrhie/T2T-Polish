@@ -1,14 +1,15 @@
 #!/bin/bash
 
-if [[ -z $1 ]] ; then
-    echo "Usage: ./init.sh <asm.fasta>"
-    echo "  <asm.fasta>: absolute path to asm.fasta,"
-    echo "               expecting to have asm.fasta.fai in the same path"
+if [[ "$#" -lt 2 ]] ; then
+    echo "Usage: ./init.sh asm.fasta name"
+    echo "  asm.fasta  path to asm.fasta,"
+    echo "             expecting to have asm.fasta.fai in the same path"
+    echo "  name       prefix name to be linked as."
     exit 0
 fi
 
 asm=$1
-name=`echo $asm | sed 's/\.gz$//g' | sed 's/\.fa$//g' | sed 's/\.fasta$//g'`
+name=$2
 
 if [[ "$asm" == "*\.gz" ]]; then
   pigz -dc $asm > $name.fa
