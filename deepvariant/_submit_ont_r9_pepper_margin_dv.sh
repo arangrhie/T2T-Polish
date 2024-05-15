@@ -59,7 +59,7 @@ else
 fi
 partition=quick
 walltime=30:00
-extra="--dependency=afterok:$wait_for"
+extra="--dependency=afterany:$wait_for" # afterany because dv reports "FAILED" for empty VCFs
 log=logs/$name.%A.log
 
 set -x

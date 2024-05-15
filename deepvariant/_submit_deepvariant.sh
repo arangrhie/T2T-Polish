@@ -12,7 +12,7 @@ BAM=$2
 MODE=$3
 SAMPLE=$4 # name to be appeared in the output VCF SAMPLE field
 wait_for=$5 # optional
-N_SHARD=48
+N_SHARD=16 # Lower to reduce racing condition
 
 PIPELINE=$tools/T2T-Polish
 
@@ -57,48 +57,40 @@ if [[ ! -d dv_$MODE/examples ]]; then
     extra="--dependency=afterok:$wait_for"
   fi
 
-  echo "
-  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --gres=$gres \\
-         --partition=$partition \\
-         -D $path \\
-         $extra --time=$walltime \\
-         --error=$log --output=$log $script $args
-  "
-
+  echo
+  set -x
   sbatch -J $name --cpus-per-task=$cpus --mem=$mem --gres=$gres  \
          --partition=$partition \
          -D $path \
          $extra --time=$walltime \
          --error=$log --output=$log $script $args > step1.jid
+  set +x
   extra="--dependency=afterok:"`cat step1.jid`
 else
   extra=""
 fi
 
+echo
 echo "Step 2. variant_call"
 
 cpus=12
-gres="lscratch:50,gpu:p100:4" # use /lscratch/ allow up to 50GB
+gres="lscratch:50,gpu:p100:1" # use /lscratch/ allow up to 50GB
 name=dv_step2
 script=$PIPELINE/deepvariant/step2.sh
 args=""
 partition=gpu
 log=logs/$name.%A.log
 
-echo "
-sbatch -J $name --cpus-per-task=$cpus --gres=$gres \\
-       --partition=$partition \\
-       -D $path \\
-       $extra --time=$walltime \\
-       --error=$log --output=$log $script $args > step2.jid
-"
-
+echo
+set -x
 sbatch -J $name --cpus-per-task=$cpus --gres=$gres  \
        --partition=$partition \
        -D $path \
        $extra --time=$walltime \
        --error=$log --output=$log $script $args > step2.jid
+set +x
 
+echo
 echo "Step 3. postprocess_variants"
 cpus=8
 mem=48g
@@ -106,20 +98,15 @@ name=dv_step3
 script=$PIPELINE/deepvariant/step3.sh
 args=""
 partition=norm
-walltime=12:00:00
+walltime=8:00:00
 extra="--dependency=afterok:"`cat step2.jid`
 log=logs/$name.%A.log
 
-echo "
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem \\
-       --partition=$partition \\
-       -D $path \\
-       $extra --time=$walltime \\
-       --error=$log --output=$log $script $args
-"
+echo
+set -x
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem  \
        --partition=$partition \
        -D $path \
        $extra --time=$walltime \
        --error=$log --output=$log $script $args
-
+set +x

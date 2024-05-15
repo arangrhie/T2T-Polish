@@ -68,20 +68,16 @@ for CHROM in `awk -F"\t" '{print $1}' $REF.fai`; do
 	    extra=""
         fi
       
-        echo "
-        sbatch -J $name --cpus-per-task=$cpus --mem=$mem --gres=$gres \\
-               --partition=$partition \\
-               -D $path \\
-               $extra --time=$walltime \\
-               --error=$log --output=$log $script $args
-        "
-  
+        echo
+        set -x  
         sbatch -J $name --cpus-per-task=$cpus --mem=$mem --gres=$gres  \
                --partition=$partition \
                -D $path \
                $extra --time=$walltime \
                --error=$log --output=$log $script $args >> step1.jid
+       set +x
         extra="--dependency=afterok:"`tail -1 step1.jid`
+        
     else
         extra=""
     fi

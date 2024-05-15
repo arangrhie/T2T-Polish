@@ -25,9 +25,16 @@ fastq_map=input.fofn
 mode="WGS"      # no need to customize this, mode is always WGS
 sample=illumina # SAMPLE name in the output VCF
 
+set -e
+set -o pipefail
 set -x
-sh $tools/T2T-Polish/bwa/_submit_bwa.sh $ref $fastq_map $out $line_num
-wait_for=`tail -n1 mrg.jid`
+
+if [[ ! -s $out.dedup.bam ]]; then
+  sh $tools/T2T-Polish/bwa/_submit_bwa.sh $ref $fastq_map $out $line_num
+  wait_for=`tail -n1 mrg.jid`
+else
+  echo "** Found $out.dedup.bam - skip bwa **"
+fi
 
 if [[ "$mq" -eq -1 ]]; then
   sh $tools/T2T-Polish/deepvariant/_submit_deepvariant.sh $ref $out.dedup.bam $mode $sample $wait_for
