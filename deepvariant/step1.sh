@@ -25,8 +25,18 @@ wd=$PWD
 [[ -d /lscratch/${SLURM_JOB_ID} ]] && cd /lscratch/${SLURM_JOB_ID}
 echo "Working temporarily in $PWD"
 
-REF=$wd/$1
-BAM=$wd/$2
+# assign REF to actual path of file, allowing for relative paths from the original working directory:
+if [[ "$1" != "${1#/}" ]]; then
+   REF=`realpath $1`
+else
+   REF=`realpath $wd/$1`
+fi
+
+if [[ "$2" != "${2#/}" ]]; then
+   BAM=`realpath $2`
+else
+   BAM=`realpath $wd/$2`
+fi
 SAMPLE=$3
 MODE=`cat $wd/MODE`
 OUT=dv_$MODE/examples # written in /lscratch by default
