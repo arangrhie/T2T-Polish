@@ -28,6 +28,9 @@ mkdir -p logs
 ln -s $ref
 ref=`basename $ref`
 
+set -o pipefail
+
+
 if ! [[ -s repetitive_k15.txt ]]; then
   cpus=12
   mem=24g
@@ -38,11 +41,13 @@ if ! [[ -s repetitive_k15.txt ]]; then
   script=$PIPELINE/init.sh
   args="$ref"
 
-  echo "
-  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
+  set -x
   sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > init.jid
+  set +x
 
   jid=`cat init.jid`
+  echo $jid
+
   extra="--dependency=afterok:$jid"
 fi
 
@@ -56,11 +61,35 @@ script=$PIPELINE/map.sh
 args="$ref $map $wm_opt"
 
 LEN=`wc -l input.fofn | awk '{print $1}'`
-extra="$extra --array=1-$LEN" # include job dependency to init.jid
+arr=""
+for i in $(seq 1 $LEN)
+do
+  reads=`sed -n ${i}p input.fofn`
 
-echo "\
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > map.jid
+  out=`basename $reads`
+  out=`echo $out | sed 's/.gz$//g'`
+  out=`echo $out | sed 's/.fasta$//g' | sed 's/.fa$//g'`
+  out=`echo $out | sed 's/.fastq$//g' | sed 's/.fq$//g'`
+  out=$out.$i
+
+  if ! [[ -s $out.sort.bam ]] ; then
+    arr="${arr}${i}_"
+  fi
+done
+
+# bash does not understand commas (,), so let's use _
+if [[ "$arr" -eq "" ]]; then
+  echo "Found all *.sort.bam. Skip mapping"
+else
+  # add 900g local sractch, include job dependency to init.jid
+  arr=`echo $arr | sed 's/_/,/g'`
+  extra="$extra --gres=lscratch:900 --array=$arr" 
+
+  set -x
+  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > map.jid
+  set +x
+  cat map.jid
+fi
 
 cpus=24
 mem=60g
@@ -74,9 +103,9 @@ jid=`cat map.jid`
 extra="--dependency=afterok:$jid"
 log=logs/$name.%A.log
 
-echo "\
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
+set -x
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > merge.jid
+set +x
 
 cpus=12
 mem=8g
@@ -87,9 +116,10 @@ args="$prefix.bam"
 
 jid=`cat merge.jid`
 extra="--dependency=afterok:$jid"
-echo "\
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
+set -x
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > filt.jid
+set +x
+cat filt.jid
 
 name=sam2paf.$prefix
 log=logs/$name.%A.log
@@ -99,7 +129,6 @@ args="$prefix.pri.bam $prefix.pri.paf"
 jid=`tail -n1 filt.jid`
 extra="--dependency=afterok:$jid"
 
-echo "\
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args"
+set -x
 sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args
-
+set +x

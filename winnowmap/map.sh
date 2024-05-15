@@ -27,30 +27,34 @@ ref=$1
 map=$2
 opt=$3
 
+tmp=/lscratch/${SLURM_JOB_ID}
+
 reads=`sed -n ${i}p input.fofn`
 
 out=`basename $reads`
-out=`echo $out | sed 's/.fasta.$//g' | sed 's/.fasta$//g' | sed 's/.fa$//g' | sed 's/.fasta.gz$//g' | sed 's/.fa.gz$//g'`
-out=`echo $out | sed 's/.fastq.$//g' | sed 's/.fastq$//g' | sed 's/.fq$//g' | sed 's/.fastq.gz$//g' | sed 's/.fq.gz$//g'`
+out=`echo $out | sed 's/.gz$//g'`
+out=`echo $out | sed 's/.fasta$//g' | sed 's/.fa$//g'`
+out=`echo $out | sed 's/.fastq$//g' | sed 's/.fq$//g'`
 out=$out.$i
 
-set -ex
+set -e
 set -o pipefail
 
-if ! [[ -s $out.sam ]]; then
-  module load winnowmap/2.03
-   winnowmap --MD -W repetitive_k15.txt -ax $map -I12g $opt -t$cpus $ref $reads > $out.sam
+if [[ -s $out.sort.bam ]] ; then
+  echo "Found $out.sort.bam. Exit 0"
+  exit 0
 fi
 
+module load winnowmap/2.03
+module load samtools # load v1.15.1+
 
-if ! [[ -s $out.sort.bam ]]; then
-  module load samtools # load v1.15.1+
-  samtools sort -@$cpus -m2G -T $out.tmp -O bam -o $out.sort.bam $out.sam
+set -x
+winnowmap --MD -W repetitive_k15.txt -ax $map -I12g $opt -t$cpus $ref $reads > $tmp/$out.sam
 
-  echo "
-  Index"
-  samtools index $out.sort.bam
-fi
+samtools sort -@$cpus -m2G -T $tmp/$out.tmp -O bam -o $tmp/$out.sort.bam $tmp/$out.sam
 
-rm $out.sam
+mv $tmp/$out.sort.bam ./
+
+samtools index $out.sort.bam
+set +x
 
