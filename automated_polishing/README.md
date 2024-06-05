@@ -74,6 +74,18 @@ falconc bam-filter-clipped -t -F 0x104 \
 ### 3. Collect polishing edits with Racon
 
 The filtered alignments produced are then used as input to Racon, here the Racon `liftover` branch is utilised.
+To install the `liftover` branch, follow the steps below:
+```
+git clone https://github.com/isovic/racon.git
+cd racon
+git checkout liftover
+git submodule update --init --recursive
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make
+```
+
 This is an extension of the `master` branch of Racon with two custom features:
 * BED selection of regions for polishing 
 * logging the changes introduced to the draft sequences to produce the polished output (in VCF, PAF or optionally SAM format)
