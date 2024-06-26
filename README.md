@@ -11,7 +11,7 @@ For exact command lines and workflows used to generate the T2T-CHM13v1.0 and T2T
 * Repeat-aware [Winnowmap2 alignments](winnowmap) and [Marker assisted alignment filtering](marker_assisted)
 * [Coverage analysis](coverage)
 * [Polish SV and SNV like errors through a case study on Chr. 20](doc/T2T_polishing_case_study.md)
-* [Automated polishing with Racon + Merfin](automated_polishing)
+* [Legacy automated polishing with Racon + Merfin](automated_polishing) -- Recommend Patrick Grady's: [latest version of Automated polishing](https://github.com/pgrady1322/T2T-Polish)
 
 ## Related external links
 
