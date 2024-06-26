@@ -1,5 +1,6 @@
 import sys
 import re
+from sets import Set
 
 f = open('%s'% (sys.argv[1]))
 rids = {}
@@ -23,15 +24,15 @@ for line in f:
    if rid not in rids:
       rids[rid]=pos
       weights[rid]=weight
-      print("Read %s at pos %d got input from score 0 because of %d, diff of %d"%(rid, pos, weight, weight), file=sys.stderr) 
+      print >> sys.stderr, "Read %s at pos %d got input from score 0 because of %d, diff of %d"%(rid, pos, weight, weight)
    else:
       currWeight = weights[rid]
       if currWeight < weight:
          rids[rid] = pos
          weights[rid]=weight
-         print("Read %s got bumped to pos %d from score %d because of %d, diff of %d"%(rid, pos, currWeight, weight, weight-currWeight), file=sys.stderr)
+         print >> sys.stderr, "Read %s got bumped to pos %d from score %d because of %d, diff of %d"%(rid, pos, currWeight, weight, weight-currWeight)
        
-print("Done reading %d records covering %d-%d"%(len(rids), start, end), file=sys.stderr)
+print >> sys.stderr, "Done reading %d records covering %d-%d"%(len(rids), start, end)
 f.close()
 
 f = open('%s'% (sys.argv[2]))
@@ -41,7 +42,7 @@ f = open('%s'% (sys.argv[2]))
 for line in f:
    # output header lines
    if line.startswith("@"):
-      print(line.strip())
+      print line.strip()
    else:
       l = line.strip().split()
       isReverse=int(l[1]) & 16 > 0
@@ -58,8 +59,8 @@ for line in f:
          pos=rids[rid]
          if pos == int(l[3]):
             if int(l[1]) & 0x100 == 0x100:
-               print("Read %s with flag %s got bumped up to primary alignment"%(l[0], l[1]), file=sys.stderr)
+               print >> sys.stderr, "Read %s with flag %s got bumped up to primary alignment"%(l[0], l[1])
                l[1] = str(int(l[1]) - 0x100)
             l[4]="60"
-            print("\t".join(l))
+            print "\t".join(l)
 f.close()

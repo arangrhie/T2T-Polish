@@ -66,14 +66,17 @@ static const char basemap[255] =
  */
 static bool is_mapped(const bam1_core_t *core) {
 
+// Remove unmapped reads
     if (core->flag & BAM_FUNMAP) {
         return false;
     }
-    if (core->flag & BAM_FSECONDARY) {
-    	return false;
-    }
 
-    return true;
+// Remove secondary alignments: There shouldn't be any left
+   if (core->flag & BAM_FSECONDARY) {
+    	return false;
+   }
+
+   return true;
 }
 
 char *rc(char *input, int len) {

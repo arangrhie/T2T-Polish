@@ -96,6 +96,10 @@ samfile_t * open_alignment_file(std::string path) {
     return fp;
 }
 
+/***
+ * Usage: samToAlignment in.bam ref.fa
+ * Output: 
+ */
 int
 main (int argc, char **argv) {
     map<string, string> reference;
