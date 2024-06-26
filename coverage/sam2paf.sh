@@ -8,8 +8,11 @@ if [[ "$#" -lt 2 ]]; then
 fi
 
 cpu=$SLURM_CPUS_PER_TASK
+if [[ -z $cpu ]]; then
+  cpu=12
+fi
 
-module load minimap2/2.26
+module load minimap2/2.28
 module load samtools
 
 # Download k8 under $tools/k8 (https://github.com/lh3/minimap2/tree/master/misc/README.md)
@@ -19,6 +22,9 @@ module load samtools
 
 mm2_path=`which minimap2`
 mm2_path=`dirname $mm2_path`
+# $mm2_path/paftools.js in Brandon's module
+# $mm2_path/misc/paftools.js in Biowulf module
+# export PATH=$mm2_path:$mm2_path/misc:$PATH
 
 set -x
 if [[ $1 =~ .bam$ ]] || [[ $1 =~ .cram$ ]]; then
