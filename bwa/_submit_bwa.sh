@@ -60,7 +60,7 @@ else
   path=`pwd`
   log=logs/$name.%A_%a.log
 
-  extra="--gres=lscratch:900 $extra"
+  extra="--gres=lscratch:1200 $extra"
   if [[ -z $line_num ]]; then
     extra="$extra --array=$arr"
   else
