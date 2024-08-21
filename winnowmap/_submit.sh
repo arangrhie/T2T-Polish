@@ -78,7 +78,7 @@ do
 done
 
 # bash does not understand commas (,), so let's use _
-if [[ "$arr" -eq "" ]]; then
+if [[ "$arr" == "" ]]; then
   echo "Found all *.sort.bam. Skip mapping"
 else
   # add 900g local sractch, include job dependency to init.jid
