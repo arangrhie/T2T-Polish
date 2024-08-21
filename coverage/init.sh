@@ -29,7 +29,7 @@ echo "# Get sizes"
 awk '{print $1"\t0\t"$2}' $asm.fai > $name.bed
 
 echo "# Telomere"
-seqtk telo $asm > $name.telo.bed
+seqtk telo -d 50000 $asm > $name.telo.bed
 
 echo "# Exclude"
 seqtk gap -l0 $asm > $name.exclude.bed
