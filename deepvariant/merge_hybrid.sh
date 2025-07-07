@@ -11,12 +11,14 @@ BAM_HIFI=$1
 BAM_ILMN=$2
 BAM_HYBR=$3
 
-module load samtools
+module load samtools/1.21 # or higher
 set -o pipefail
 set -e
 set -x
 
-samtools merge -@$SLURM_CPUS_PER_TASK -O bam -o $BAM_HYBR $BAM_HIFI $BAM_ILMN
-samtools index $BAM_HYBR
+cpus=$SLURM_CPUS_PER_TASK
+
+samtools merge -@$cpus -O bam -o $BAM_HYBR $BAM_HIFI $BAM_ILMN
+samtools index -@$cpus $BAM_HYBR
 
 

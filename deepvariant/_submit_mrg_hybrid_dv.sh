@@ -64,9 +64,5 @@ sbatch -J $name --cpus-per-task=$cpus --mem=$mem \
        --error=$log --output=$log $script $args
 set +x
 
-if [[ $mq -eq -1 ]]; then
-  sh $tools/T2T-Polish/deepvariant/_submit_deepvariant.sh $ref $out.bam $mode $sample $wait_for
-else
-  sh $tools/T2T-Polish/deepvariant/_submit_deepvariant_with_minqual.sh $ref $out.bam $mode $sample $mq $wait_for
-fi
+sh $tools/T2T-Polish/deepvariant/_submit_deepvariant_with_minqual.sh $ref $out.bam $mode $sample $mq $wait_for
 

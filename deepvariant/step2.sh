@@ -7,8 +7,10 @@ if [[ ! -s MODE ]]; then
   exit -1
 fi
 
-module load deepvariant/1.5.0 || exit 1
+# Update to DeepVariant v1.6.1 on Sep. 26 2024
+module load deepvariant/1.6.1 || exit 1
 
+ulimit -u 32768
 set -o pipefail
 set -e
 

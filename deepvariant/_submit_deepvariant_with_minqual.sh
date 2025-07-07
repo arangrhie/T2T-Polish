@@ -7,22 +7,24 @@ if [[ "$#" -lt 5 ]] ; then
   exit -1
 fi
 
-REF=$1
-BAM=$2
+REF=$(realpath $1)
+BAM=$(realpath $2)
 MODE=$3
 SAMPLE=$4 # name to be appeared in the output VCF SAMPLE field
 MINQUAL=$5 # optional
 wait_for=$6 # optional
-N_SHARD=16 # Lower to reduce racing condition
+N_SHARD=12 # Lower to reduce racing condition
 
 PIPELINE=$tools/T2T-Polish
 
 set -e
 set -o pipefail
 
+echo -e "$REF $BAM $MODE $SAMPLE"
+
 # Check $MODE is valid
 if [[ $MODE == "WGS" || $MODE == "PACBIO" || $MODE == "ONT_R104" || $MODE == "HYBRID_PACBIO_ILLUMINA" ]]; then
-  echo "DeepVariant v1.5 in $MODE mode"
+  echo "DeepVariant v1.6.1 in $MODE mode"
 else
   echo "Unknown option $MODE"
 fi
@@ -44,17 +46,20 @@ echo $SAMPLE > SAMPLE_MQ$MINQUAL
 
 mkdir -p logs
 
-if [[ ! -d dv_$MODE\_MQ$MINQUAL/examples ]]; then
+path=$PWD
+
+extra=""
+
+if [ ! -f deepvariant.step1.done ]; then
   echo "Step 1. make_examples"
   cpus=$N_SHARD
   mem=$(($cpus*3))g
   gres="lscratch:1000" # use /lscratch/ allow up to 1000 GB
   name=dv_step1_mq$MINQUAL
   script=$PIPELINE/deepvariant/step1_with_minqual.sh
-  args="$REF $BAM $SAMPLE $MINQUAL"
+  args="$SAMPLE $MINQUAL"
   partition=norm
-  walltime=12:00:00
-  path=`pwd`
+  walltime=3-00:00:00
   log=logs/$name.%A.log
 
   if [[ ! -z $wait_for ]]; then
@@ -66,52 +71,58 @@ if [[ ! -d dv_$MODE\_MQ$MINQUAL/examples ]]; then
          --partition=$partition \
          -D $path \
          $extra --time=$walltime \
-         --error=$log --output=$log $script $args > step1_mq$MINQUAL.jid
+         --error=$log --output=$log $script $args > $name.jid
   set +x
   echo
-  extra="--dependency=afterok:"`cat step1_mq$MINQUAL.jid`
+  extra="--dependency=afterok:"`cat $name.jid`
 else
   extra=""
 fi
-
-echo
-echo "Step 2. variant_call"
-
-cpus=12
-gres="lscratch:50,gpu:p100:1" # use /lscratch/ allow up to 50GB
-name=dv_step2_mq$MINQUAL
-script=$PIPELINE/deepvariant/step2_with_minqual.sh
-args="$MINQUAL"
-partition=gpu
-log=logs/$name.%A.log
-
-echo
-set -x
-sbatch -J $name --cpus-per-task=$cpus --gres=$gres  \
-       --partition=$partition \
-       -D $path \
-       $extra --time=$walltime \
-       --error=$log --output=$log $script $args > step2_mq$MINQUAL.jid
-set +x
 echo
 
-echo
-echo "Step 3. postprocess_variants"
-cpus=8
-mem=48g
-name=dv_step3_mq$MINQUAL
-script=$PIPELINE/deepvariant/step3_with_minqual.sh
-args="$MINQUAL"
-partition=norm
-walltime=12:00:00
-extra="--dependency=afterok:"`cat step2_mq$MINQUAL.jid`
-log=logs/$name.%A.log
+if [ ! -f deepvariant.step2.done ]; then
+  echo "Step 2. variant_call"
 
+  cpus=12
+  gres="gpu:1" # use /lscratch/ allow up to 50GB
+  name=dv_step2_mq$MINQUAL
+  script=$PIPELINE/deepvariant/step2_with_minqual.sh
+  args="$MINQUAL"
+  walltime=12:00:00
+  partition=gpu
+  log=logs/$name.%A.log
+  
+  echo
+  set -x
+  sbatch -J $name --cpus-per-task=$cpus --gres=$gres  \
+         --partition=$partition \
+         -D $path \
+         $extra --time=$walltime \
+         --error=$log --output=$log $script $args > $name.jid
+  set +x
+  extra="--dependency=afterok:"`cat $name.jid`
+else
+  extra=""
+fi
 echo
-set -x
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem  \
-       --partition=$partition \
-       -D $path \
-       $extra --time=$walltime \
-       --error=$log --output=$log $script $args
-set +x
+
+if [ ! -f deepvariant.step3.done ]; then
+  echo "Step 3. postprocess_variants"
+  cpus=12
+  mem=120g
+  name=dv_step3_mq$MINQUAL
+  script=$PIPELINE/deepvariant/step3_with_minqual.sh
+  args="$MINQUAL"
+  partition=norm
+  walltime=12:00:00
+  log=logs/$name.%A.log
+
+  echo
+  set -x
+  sbatch -J $name --cpus-per-task=$cpus --mem=$mem  \
+         --partition=$partition \
+         -D $path \
+         $extra --time=$walltime \
+         --error=$log --output=$log $script $args
+  set +x
+fi

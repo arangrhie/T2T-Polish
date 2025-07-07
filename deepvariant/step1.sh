@@ -1,9 +1,7 @@
 #!/bin/bash
 
-if [[ "$#" -lt 3 ]]; then
-  echo "Usage: ./step1.sh ref.fa in.bam SAMPLE"
-  echo "  ref.fa  : reference sequence"
-  echo "  in.bam  : read alignment"
+if [[ "$#" -lt 1 ]]; then
+  echo "Usage: ./step1.sh SAMPLE"
   echo "  SAMPLE  : SAMPLE name to be present in the final VCF"
   echo 
   echo "Requires MODE and N_SHARD text files."
@@ -17,32 +15,26 @@ fi
 set -e
 set -o pipefail
 
-module load deepvariant/1.5.0 || exit 1
+# Update to DeepVariant v1.6.1 on Mar. 10 2025
+module load deepvariant/1.6.1 || exit 1
 module load parallel
 
+set -x
+
 wd=$PWD
+SAMPLE=$1
 
 [[ -d /lscratch/${SLURM_JOB_ID} ]] && cd /lscratch/${SLURM_JOB_ID}
 echo "Working temporarily in $PWD"
 
-# assign REF to actual path of file, allowing for relative paths from the original working directory:
-if [[ "$1" != "${1#/}" ]]; then
-   REF=`realpath $1`
-else
-   REF=`realpath $wd/$1`
-fi
-
-if [[ "$2" != "${2#/}" ]]; then
-   BAM=`realpath $2`
-else
-   BAM=`realpath $wd/$2`
-fi
-SAMPLE=$3
-MODE=`cat $wd/MODE`
+# Collect REF BAM MODE and N_SHARD
+REF=`cat ${wd}/REF`
+BAM=`cat ${wd}/BAM`
+MODE=`cat ${wd}/MODE`
+N_SHARD=`cat ${wd}/N_SHARD`
 OUT=dv_$MODE/examples # written in /lscratch by default
-N_SHARD=`cat $wd/N_SHARD`
 
-mkdir -p $OUT logs
+mkdir -p $OUT logs $wd/logs-parallel-$SLURM_JOB_ID
 
 extra_args=""
 
@@ -60,28 +52,22 @@ else
 fi
 
 echo "make_examples with parallel in $MODE mode"
-echo "
-make_examples \\
-  --mode calling   \\
-  --ref "${REF}"   \\
-  --reads "${BAM}" \\ 
-  --examples $OUT/tfrecord@${N_SHARD}.gz $extra_args \\
-  --sample_name "${SAMPLE}" \\
-  --task {}
-"
+
+GVCF_TFRECORDS="${OUT}/examples.gvcf.tfrecord@${N_SHARDS}.gz"
+VCF_TFRECORDS="${OUT}/examples.tfrecord@${N_SHARDS}.gz"
 
 seq 0 $((N_SHARD-1)) \
   | parallel -j ${SLURM_CPUS_PER_TASK} --eta --halt 2 \
-  --joblog "logs/log" --res "logs" \
-  make_examples    \
-    --mode calling \
-    --ref "${REF}" \
+  --joblog "$wd/logs-parallel-$SLURM_JOB_ID/log" --res "$wd/logs-parallel-$SLURM_JOB_ID" \
+  make_examples      \
+    --mode calling   \
+    --ref   "${REF}" \
     --reads "${BAM}" \
-    --examples $OUT/tfrecord@${N_SHARD}.gz $extra_args \
-    --sample_name "${SAMPLE}" \
-    --task {} \
-    || exit 1
-
-mkdir -p $wd/$OUT
-cp -r $OUT/* $wd/$OUT/
-cp -r logs $wd/dv_$MODE/
+    --examples $$VCF_TFRECORDS \
+    --gvcf     $GVCF_TFRECORDS \
+    --sample_name "${SAMPLE}"  \
+    $extra_args \
+    --task {} &&
+mkdir -p $wd/dv_$MODE &&
+cp -r $OUT $wd/dv_$MODE &&
+touch $wd/deepvariant.step1.done || exit 1
