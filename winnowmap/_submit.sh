@@ -14,8 +14,12 @@ ref=$1
 prefix=$2
 map=$3
 wm_opt=$4
+extra=$5 # "--dependency=afterok:$jid"
 
 PIPELINE=$tools/T2T-Polish/winnowmap
+
+echo $wn_opt
+
 
 if ! [[ -e input.fofn ]]; then
   echo "No input.fofn found. Exit."
@@ -42,7 +46,7 @@ if ! [[ -s repetitive_k15.txt ]]; then
   args="$ref"
 
   set -x
-  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > init.jid
+  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D `pwd` $extra --time=$walltime --error=$log --output=$log $script $args > init.jid
   set +x
 
   jid=`cat init.jid`
@@ -58,8 +62,9 @@ walltime=2-0
 name=map.$prefix
 log=logs/$name.%A_%a.log
 script=$PIPELINE/map.sh
-args="$ref $map $wm_opt"
+# args="$ref $map $wm_opt"
 
+echo $args
 LEN=`wc -l input.fofn | awk '{print $1}'`
 arr=""
 for i in $(seq 1 $LEN)
@@ -86,12 +91,14 @@ else
   extra="$extra --gres=lscratch:900 --array=$arr" 
 
   set -x
-  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > map.jid
+  # sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D `pwd` $extra --time=$walltime --error=$log --output=$log $script $args > map.jid
+  sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D `pwd` $extra --time=$walltime --error=$log --output=$log $script $ref $map "$wm_opt" > map.jid
   set +x
   cat map.jid
 fi
 
-cpus=24
+# Merge
+cpus=48
 mem=60g
 partition=norm
 walltime=1-0
@@ -104,7 +111,7 @@ extra="--dependency=afterok:$jid"
 log=logs/$name.%A.log
 
 set -x
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > merge.jid
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D `pwd` $extra --time=$walltime --error=$log --output=$log $script $args > merge.jid
 set +x
 
 cpus=12
@@ -117,7 +124,7 @@ args="$prefix.bam"
 jid=`cat merge.jid`
 extra="--dependency=afterok:$jid"
 set -x
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args > filt.jid
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D `pwd` $extra --time=$walltime --error=$log --output=$log $script $args > filt.jid
 set +x
 cat filt.jid
 
@@ -130,5 +137,5 @@ jid=`tail -n1 filt.jid`
 extra="--dependency=afterok:$jid"
 
 set -x
-sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D $path $extra --time=$walltime --error=$log --output=$log $script $args
+sbatch -J $name --cpus-per-task=$cpus --mem=$mem --partition=$partition -D `pwd` $extra --time=$walltime --error=$log --output=$log $script $args
 set +x

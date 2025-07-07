@@ -45,16 +45,16 @@ if [[ -s $out.sort.bam ]] ; then
   exit 0
 fi
 
+set -x
 module load winnowmap/2.03
 module load samtools # load v1.15.1+
 
-set -x
 winnowmap --MD -W repetitive_k15.txt -ax $map -I12g $opt -t$cpus $ref $reads > $tmp/$out.sam
 
 samtools sort -@$cpus -m2G -T $tmp/$out.tmp -O bam -o $tmp/$out.sort.bam $tmp/$out.sam
 
 mv $tmp/$out.sort.bam ./
 
-samtools index $out.sort.bam
+samtools index -@$cpus $out.sort.bam
 set +x
 
