@@ -14,7 +14,9 @@ ver=$2
 pattern=$4
 
 # link pattern dir
-ln -sf $pattern pattern
+if ! [[ -d pattern ]]; then
+  ln -sf $pattern pattern
+fi
 
 asm=pattern/$ver.bed               # chr length
 telo=pattern/$ver.telo.bed         # telomere annotation

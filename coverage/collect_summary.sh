@@ -1,13 +1,14 @@
 #!/bin/bash
 
 if [[ "$#" -lt 2 ]]; then
-  echo "Usage: ./collect_summary.sh in.paf name"
+  echo "Usage: ./collect_summary.sh in.paf name [full]"
   exit -1
 fi
 
 pri=$1
 pri=${pri/.paf/}
 name=$2
+full=$3
 
 set -e
 set -o pipefail
@@ -15,7 +16,7 @@ set -o pipefail
 collect_stat() {
   in_paf=$1
   out_prefix=$2
-  WINDOW=$3 # 10000
+  WINDOW=$3 # 1024
   platform=$4
   
   perstrand=$5
@@ -81,18 +82,20 @@ collect_coverage() {
   fi
 }
 
+if [[ $full == "full" ]]; then
 
-# Collect read-length, mq, idy tracks
-# collect_stat $pri.paf $pri 10000
+  # Collect read-length, mq, idy tracks
+  collect_stat $pri.paf $pri 1024
 
-# Per strand stat tracks
-# collect_stat $pri.paf $pri 10000 "$name" 1
+  # Per strand stat tracks
+  collect_stat $pri.paf $pri 1024 "$name" 1
+
+  # Per strand coverage
+  collect_coverage $pri.paf $pri 1024 "$name" 1
+fi
 
 # Coverage and Clipped
 collect_coverage $pri.paf $pri 1024 "$name"
-
-# Per strand coverage
-# collect_coverage $pri.paf $pri 1024 "$name" 1
 
 
 
