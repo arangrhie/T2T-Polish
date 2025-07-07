@@ -39,13 +39,13 @@ LEN=`wc -l $fastq_map | awk '{print $1}'`
 arr=""
 for i in $(seq 1 $LEN)
 do
-  if [[ ! -s $out.$i.dedup.bam ]]; then
+  if [[ ! -s $out.$i.dedup.pri.bam ]]; then
     arr="${arr}${i}_"
   fi
 done
 
 if [[ -v "$arr" ]]; then
-  echo "Found all *.dedup.bam. Skip mapping"
+  echo "Found all *.dedup.pri.bam. Skip mapping"
   extra=""
   wait_for=""
 else
@@ -60,7 +60,7 @@ else
   path=`pwd`
   log=logs/$name.%A_%a.log
 
-  extra="--gres=lscratch:1200 $extra"
+  extra="--gres=lscratch:2000 $extra"
   if [[ -z $line_num ]]; then
     extra="$extra --array=$arr"
   else
@@ -77,8 +77,7 @@ else
 
   for i in $(seq 1 $LEN)
   do
-    echo "$out.$i.bam" >> bam.list
-    echo "$out.$i.dedup.bam" >> bam.dedup.list
+    echo "$out.$i.dedup.pri.bam" >> bam.dedup.list
   done
 fi
 
@@ -92,16 +91,9 @@ path=`pwd`
 log=logs/$name.%A.log
 extra=$wait_for
 
-args="$out bam.list"
-
+args="$out bam.dedup.list"
 set -x
-sbatch -J $name --mem=$mem --partition=$partition --cpus-per-task=$cpus -D $path $extra --time=$walltime --error=$log --output=$log $script $args
-set +x
-
-name=mrg.$out.dedup
-args="$out.dedup bam.dedup.list"
-set -x
-sbatch -J $name --mem=$mem --partition=$partition --cpus-per-task=$cpus -D $path $extra --time=$walltime --error=$log --output=$log $script $args | awk '{print $NF}' > mrg.jid
+sbatch -J $name --mem=$mem --partition=$partition --cpus-per-task=$cpus -D $path $extra --time=$walltime --error=$log --output=$log $script $args > mrg.jid
 set +x
 jid=`cat mrg.jid`
 echo "Merge: $jid"

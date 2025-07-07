@@ -20,24 +20,26 @@ set -e
 set -o pipefail
 
 bams=`cat $lst   | tr '\n' ' '`
-bais=`echo $bams | sed 's/.bam/.bam.bai/g'`
+csis=`echo $bams | sed 's/\.bam$/.bam.csi/g'`
 
 num_bams=`wc -l $lst | awk '{print $1}'`
 
 if [[ "$num_bams" -eq 1 ]]; then
 	echo "Only 1 bam provided. Skipping Merging."
-  mv $bams $out.bam
-  mv $bais $out.bam.bai
+  mv $bams $out.dedup.pri.bam
+  mv $csis $out.dedup.pri.bam.csi
+  touch bwa.done
 	exit 0
 fi
 
 echo "Merge $bams"
 
 set -x
-samtools merge -@ $cpu -O bam -b $lst $out.bam
-samtools index $out.bam
+samtools merge -@ $cpu -O bam -b $lst $out.dedup.pri.bam
+samtools index -@ $cpu $out.dedup.pri.bam
 set +x
 
 echo "
 Clean up"
-rm $bams $bais
+rm $bams $csis
+touch bwa.done

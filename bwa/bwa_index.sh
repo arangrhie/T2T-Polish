@@ -1,6 +1,7 @@
 #!/bin/bash
 
 ref=$1
+cpus=$SLURM_CPUS_PER_TASK
 
 if [ -z $ref ]; then
 	echo "Usage: ./bwa_index.sh <ref.fasta>"
@@ -15,7 +16,8 @@ echo "
 bwa index $ref"
 bwa index $ref
 
-echo "
-samtools faidx $ref"
-samtools faidx $ref
+if [[ ! -s $ref.fai ]]; then
+  echo "samtools faidx $ref"
+  samtools faidx -@$cpus $ref
+fi
 
