@@ -1,0 +1,86 @@
+/*
+ * Example user config.  Copy to user.config and fill in your paths.
+ *
+ * Resource / executor settings (CPUs, memory, queues, scheduler) live in
+ * resources.config.  The default resources.config targets the NIH Biowulf
+ * Slurm cluster.  If you are on a different system, copy resources.config,
+ * adjust it for your scheduler, and load it here:
+ *
+ *   includeConfig '/absolute/path/to/my_resources.config'
+ *
+ * Or pass it on the command line alongside this file:
+ *
+ *   nextflow run main.nf -c user.config -c my_resources.config
+ */
+params {
+  // Reference pieces. verkko_asm should have the assembly.*.fasta.gz files below.
+  verkko_asm = '/data/Phillippy2/projects/hprc-test-r3/assemblies-r3/HG002_nor9/verkko-hi-c'
+  hap1_fasta_gz = "${params.verkko_asm}/assembly.haplotype1.fasta.gz"
+  hap2_fasta_gz = "${params.verkko_asm}/assembly.haplotype2.fasta.gz"
+  ebv_fasta_gz  = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional — remove or comment out if absent
+  mito_exemplar_fasta_gz = "${params.verkko_asm}/assembly.mito.exemplar.fasta.gz"
+  rdna_exemplar_fasta_gz = "${params.verkko_asm}/assembly.rdna.exemplar.fasta.gz"
+
+  // Reads (globs)
+  read_glob_hifi     = '/data/Phillippy/seq/hpgp/HG002/pacbio/CCS/Revio_HiFi_DCv1.2_24hr_PacBio_2024May/*.fastq.gz'
+  read_glob_ont      = '/data/Phillippy/seq/hpgp/HG002/nanopore/R10.4.1_dorado_v0.3.4/data/*.fq.gz'
+
+  // Use either Illumina or Element
+  read_glob_illumina = '/data/Phillippy/seq/hpgp/HG002/illumina/NovaSeq_PCRfree_2x151_50x_Google_2020/*{1,2}.fastq.gz'
+  read_glob_element  = '/data/Phillippy/seq/hpgp/HG002/element/AVITI_UltraQ_400bp_80x_NIST_2024Sep/*{1,2}.fastq.gz' // or
+  read_glob_element  = null
+
+  // Assembly name and version — combined as {asm_name}_{asm_ver} for all output
+  // filenames (BAMs, VCFs, FASTAs).  asm_ver is auto-incremented each polishing
+  // round (v0.1 → v0.2 → v0.3, …).  Both values MUST be quoted strings.
+  asm_name = 'assembly'   // e.g. 'bTaeGut7'
+  asm_ver  = 'v0.1'       // e.g. 'v0.6'  — just the version tag, no name prefix
+
+  // Re-entry params — skip stages whose outputs already exist (e.g. after a failed run).
+  // Use LITERAL paths here; params.mapping_outdir / params.dv_outdir cannot be
+  // referenced across config files and will cause "Unknown config attribute" errors.
+  // Leave commented out (null) to run all stages from scratch.
+  //
+  // Pre-built reference FA.GZ files — skips BUILD_HAP_REFERENCES + BUILD_DIP_REFERENCE.
+  // Point to the assemblies/ output directory; filenames are inferred as
+  //   {asm_name}_{asm_ver}.{hap1,hap2,dip}.fa.gz  (+.gzi and .fai must exist alongside).
+  // assemblies_dir = '/path/to/results/assemblies'
+  //
+  // Pre-built BAMs — skips WM mapping, BWA mapping, and MERGE_HYBRID (per hap).
+  // Point to the mapping/ output directory; WM pri BAMs, BWA BAMs, and hybrid
+  // merged BAMs are discovered automatically using the {asm_name}_{asm_ver} prefix.
+  // mapping_dir = '/path/to/results/mapping'
+  //
+  // Pre-built DV examples — skips make_examples (step 1, per hap/combo).
+  // Point to the deepvariant/ output directory; examples/ dirs are discovered
+  // automatically using the {asm_name}_{asm_ver} prefix.
+  // deepvariant_dir = '/path/to/results/deepvariant'
+
+  // Root of the shared tools installation.  Used to locate binaries such as
+  // merfin when they are not on PATH.  Set to the directory that contains
+  // subdirectories like merfin/1.1/bin/, k8/, etc.
+  tools = '/data/Phillippy/tools'
+
+  // Path to the k8 binary used by paftools.js sam2paf (sam2paf step).
+  // Download: https://github.com/attractivechaos/k8/releases
+  k8 = "${params.tools}/k8/k8"
+
+
+  // SNV candidates / Merfin polishing.
+  // Required when run_snv_candidates = true (the default).
+  //
+  // hybrid_meryl: path to a Meryl k-mer database built from the hybrid reads
+  //   (e.g. HiFi + Illumina) used to evaluate variant candidates with Merfin.
+  //   Build with: meryl union-sum output hybrid.meryl hifi.meryl illumina.meryl
+  hybrid_meryl = '/data/Phillippy/projects/hprc-test-r3/HG002/meryl/hybrid.meryl'
+  //
+  // merfin_peak: integer peak k-mer coverage of the hybrid_meryl database.
+  //   Merfin uses this to compute lookup values.  Estimate from a GenomeScope2
+  //   or Smudgeplots analysis of the same read set, or from the Meryl histogram.
+  merfin_peak  = 42
+
+  // Optional: override the merfin binary path explicitly.
+  // If unset, defaults to "${params.tools}/merfin/1.1/bin/merfin" when tools
+  // is set, otherwise expects merfin to be on PATH.
+  // merfin = '/data/Phillippy/tools/merfin/1.1/bin/merfin'
+}
