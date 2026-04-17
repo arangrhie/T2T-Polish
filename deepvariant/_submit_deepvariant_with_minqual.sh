@@ -2,8 +2,12 @@
 
 if [[ "$#" -lt 5 ]] ; then
   echo "Usage: ./_submit_deepvariant_with_minqual.sh ref.fa alignment.bam mode sample minqual [jid_to_wait]"
-  echo "  mode   WGS | PACBIO | ONT_R104 | HYBRID_PACBIO_ILLUMINA"
-  echo "  output file will be generated as dv_mode.vcf.gz"
+  echo "  ref.fa          reference fasta file"
+  echo "  alignment.bam   input alignment bam file"
+  echo "  mode            WGS | PACBIO | ONT_R104 | HYBRID_PACBIO_ILLUMINA"
+  echo "  sample          name to be appear in the output VCF SAMPLE field"
+  echo "  minqual         Recommending 0 for dip reference, -1 for haploid reference. 5 will be used for -1"
+  echo "  output file will be generated as dv_[mode]_MQ[minqual].vcf.gz"
   exit -1
 fi
 
@@ -16,6 +20,11 @@ wait_for=$6 # optional
 N_SHARD=12 # Lower to reduce racing condition
 
 PIPELINE=$tools/T2T-Polish
+
+if [[ $MINQUAL -eq -1 ]]; then
+  MINQUAL=5
+  echo "Using minqual=5 for haploid reference alignments."
+fi
 
 set -e
 set -o pipefail
@@ -53,7 +62,7 @@ extra=""
 if [ ! -f deepvariant.step1.done ]; then
   echo "Step 1. make_examples"
   cpus=$N_SHARD
-  mem=$(($cpus*3))g
+  mem=$(($cpus*4))g
   gres="lscratch:1000" # use /lscratch/ allow up to 1000 GB
   name=dv_step1_mq$MINQUAL
   script=$PIPELINE/deepvariant/step1_with_minqual.sh

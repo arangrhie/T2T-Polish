@@ -1,7 +1,7 @@
 #! /bin/sh
 
 if [[ "$#" -lt 6 ]]; then
-  echo "Usage: ./_submit_mrg_dv.sh ref.fasta hifi.bam ilmn.bam out sample mq"
+  echo "Usage: ./_submit_mrg_hybrid_dv.sh ref.fasta hifi.bam ilmn.bam out sample mq"
   echo "  ref.fasta  reference"
   echo "  hifi.bam   HiFi primary read alignment"
   echo "  ilmn.bam   Illumina read alignment. Use markdup.bam"
