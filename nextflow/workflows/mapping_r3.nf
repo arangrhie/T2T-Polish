@@ -23,9 +23,6 @@ workflow MAPPING_R3 {
     def ontReads  = ontGlob  ? Channel.fromPath(ontGlob ).map { f -> tuple('ont',  f) }
                              : Channel.empty()
 
-    def nHifi = hifiGlob ? file(hifiGlob).size() : 0
-    def nOnt  = ontGlob  ? file(ontGlob ).size() : 0
-
     def wm = wm_refs.multiMap { it -> hifi: it; ont: it }
     def hifiInput = wm.hifi.combine(hifiReads)
     def ontBase   = params.ont_map_haps ? wm.ont
@@ -37,8 +34,8 @@ workflow MAPPING_R3 {
         hifi: plat == 'hifi'
         ont:  true
     }
-    def mergedHifi = WINNOWMAP_MERGE_HIFI_R3( mappedByPlat.hifi.groupTuple(by: [0, 1, 2], size: nHifi) )
-    def mergedOnt  = WINNOWMAP_MERGE_ONT_R3(  mappedByPlat.ont .groupTuple(by: [0, 1, 2], size: nOnt ) )
+    def mergedHifi = WINNOWMAP_MERGE_HIFI_R3( mappedByPlat.hifi.groupTuple(by: [0, 1, 2]) )
+    def mergedOnt  = WINNOWMAP_MERGE_ONT_R3(  mappedByPlat.ont .groupTuple(by: [0, 1, 2]) )
     def filtered = WINNOWMAP_FILTER_R3( mergedHifi.mix(mergedOnt) )
     SAM2PAF_R3(filtered)
 

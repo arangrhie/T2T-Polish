@@ -265,6 +265,7 @@ process PEPPER_MARGIN_DV {
                mode: 'link', overwrite: true,
                enabled: params.keep_dv_intermediates
 
+    errorStrategy 'ignore'
     input:
     tuple val(hap), val(region), val(mq),
           path(ref_fa_gz), path(ref_gzi), path(ref_fai),
@@ -273,7 +274,8 @@ process PEPPER_MARGIN_DV {
     output:
     tuple val(hap), val(mq),
           path("dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz"),
-          path("dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz.tbi")
+          path("dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz.tbi"),
+          optional: true
 
     script:
     def mq_opts = (mq.toInteger() >= 0)

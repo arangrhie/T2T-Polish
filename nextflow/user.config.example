@@ -17,9 +17,9 @@ params {
   verkko_asm = '/data/Phillippy2/projects/hprc-test-r3/assemblies-r3/HG002_nor9/verkko-hi-c'
   hap1_fasta_gz = "${params.verkko_asm}/assembly.haplotype1.fasta.gz"
   hap2_fasta_gz = "${params.verkko_asm}/assembly.haplotype2.fasta.gz"
-  ebv_fasta_gz  = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional — remove or comment out if absent
   mito_exemplar_fasta_gz = "${params.verkko_asm}/assembly.mito.exemplar.fasta.gz"
-  rdna_exemplar_fasta_gz = "${params.verkko_asm}/assembly.rdna.exemplar.fasta.gz"
+  ebv_fasta_gz  = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional — remove or comment out if absent
+  rdna_exemplar_fasta_gz = "${params.verkko_asm}/assembly.rdna.exemplar.fasta.gz" // optional
 
   // Reads (globs)
   read_glob_hifi     = '/data/Phillippy/seq/hpgp/HG002/pacbio/CCS/Revio_HiFi_DCv1.2_24hr_PacBio_2024May/*.fastq.gz'

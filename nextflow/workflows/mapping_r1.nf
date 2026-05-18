@@ -22,11 +22,6 @@ workflow MAPPING_R1 {
     def ontReads  = ontGlob  ? Channel.fromPath(ontGlob ).map { f -> tuple('ont',  f) }
                              : Channel.empty()
 
-    // Count files at launch time (static glob) so groupTuple can emit each
-    // (hap, platform) group immediately upon completion.
-    def nHifi = hifiGlob ? file(hifiGlob).size() : 0
-    def nOnt  = ontGlob  ? file(ontGlob ).size() : 0
-
     // wm_refs is a hot channel — multiMap to avoid consuming it twice
     def wm = wm_refs.multiMap { it -> hifi: it; ont: it }
     def hifiInput = wm.hifi.combine(hifiReads)
@@ -42,8 +37,8 @@ workflow MAPPING_R1 {
         hifi: plat == 'hifi'
         ont:  true
     }
-    def mergedHifi = WINNOWMAP_MERGE_HIFI_R1( mappedByPlat.hifi.groupTuple(by: [0, 1, 2], size: nHifi) )
-    def mergedOnt  = WINNOWMAP_MERGE_ONT_R1(  mappedByPlat.ont .groupTuple(by: [0, 1, 2], size: nOnt ) )
+    def mergedHifi = WINNOWMAP_MERGE_HIFI_R1( mappedByPlat.hifi.groupTuple(by: [0, 1, 2]) )
+    def mergedOnt  = WINNOWMAP_MERGE_ONT_R1(  mappedByPlat.ont .groupTuple(by: [0, 1, 2]) )
     def filtered = WINNOWMAP_FILTER_R1( mergedHifi.mix(mergedOnt) )
     SAM2PAF_R1(filtered)
 

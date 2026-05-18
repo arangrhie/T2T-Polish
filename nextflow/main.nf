@@ -141,7 +141,6 @@ workflow {
         requireParam('hap1_fasta_gz',          params.hap1_fasta_gz)
         requireParam('hap2_fasta_gz',          params.hap2_fasta_gz)
         requireParam('mito_exemplar_fasta_gz', params.mito_exemplar_fasta_gz)
-        requireParam('rdna_exemplar_fasta_gz', params.rdna_exemplar_fasta_gz)
     }
 
     def rounds = (params.polish_rounds as int)
@@ -175,18 +174,89 @@ workflow {
     def r1_bwa_bams
     if ( params.mapping_dir ) {
         def mdir = params.mapping_dir.replaceAll('/$', '')
-        r1_wm_bams = Channel.fromPath("${mdir}/${_pfx}.*.*/${_pfx}.*.*.pri.bam")
-            .map { f ->
-                def m = f.name =~ /\.([^.]+)\.([^.]+)\.pri\.bam$/
-                if (!m) error "mapping_dir: cannot parse hap/platform from filename: ${f.name}"
-                tuple(m[0][1], params.asm_ver, m[0][2], f, file("${f}.bai"))
+
+        // ---- Detect which (hap, platform) merged BAMs already exist on disk ----
+        // Done at launch time (plain Groovy) so we can gate the ref channels
+        // without needing any extra params.
+        // NOTE: use new File() (java.io.File), NOT file() — the Nextflow file()
+        // helper returns a java.nio.file.Path which lacks listFiles().
+        // Scan only subdirs matching this version's prefix to avoid picking up
+        // BAMs from other versions that happen to share the same hap/platform.
+        def _mdir_file = new File(mdir)
+        def _pfx_subdirs = (_mdir_file.listFiles() ?: [])
+            .findAll { it.isDirectory() && it.name.startsWith(_pfx) }
+
+        def wm_on_disk = _pfx_subdirs
+            .collectMany { dir -> dir.listFiles()?.toList() ?: [] }
+            .findAll { it.name ==~ /.*\.([^.]+)\.([^.]+)\.pri\.bam$/ &&
+                      !(it.name ==~ /.*\.dedup\.pri\.bam$/) }
+            .collect { f ->
+                def m = (f.name =~ /\.([^.]+)\.([^.]+)\.pri\.bam$/)[0]
+                [m[1], m[2]]
+            } as Set
+
+        def bwa_on_disk = _pfx_subdirs
+            .collectMany { dir -> dir.listFiles()?.toList() ?: [] }
+            .findAll { it.name ==~ /.*\.([^.]+)\.([^.]+)\.dedup\.pri\.bam$/ }
+            .collect { f ->
+                def m = (f.name =~ /\.([^.]+)\.([^.]+)\.dedup\.pri\.bam$/)[0]
+                [m[1], m[2]]
+            } as Set
+
+        log.info "mapping_dir scan: found ${_pfx_subdirs.size()} subdirs for prefix '${_pfx}'"
+        log.info "mapping_dir scan: wm_on_disk  = ${wm_on_disk}"
+        log.info "mapping_dir scan: bwa_on_disk = ${bwa_on_disk}"
+
+        // A hap is "done" only when ALL expected platforms for that hap are present.
+        // Derive the expected platform sets from what's actually on disk (union across
+        // all haps), rather than from params.platforms — this way the check is correct
+        // even when the current invocation doesn't list all previously-run platforms.
+        // ONT exception: ONT is only expected for hap1/hap2 if params.ont_map_haps=true.
+        def _found_long_plats  = wm_on_disk.collect { it[1] }.unique()
+        def _found_short_plats = bwa_on_disk.collect { it[1] }.unique()
+
+        log.info "mapping_dir scan: found long-read platforms on disk:  ${_found_long_plats}"
+        log.info "mapping_dir scan: found short-read platforms on disk: ${_found_short_plats}"
+
+        def wm_haps_done = ['hap1', 'hap2', 'dip'].findAll { hap ->
+            def expected = _found_long_plats.findAll { plat ->
+                plat == 'hifi' || hap == 'dip' || params.ont_map_haps
             }
-        r1_bwa_bams = Channel.fromPath("${mdir}/${_pfx}.*.*/${_pfx}.*.*.dedup.pri.bam")
+            expected && expected.every { plat -> wm_on_disk.contains([hap, plat]) }
+        }
+        def bwa_haps_done = ['hap1', 'hap2', 'dip'].findAll { hap ->
+            _found_short_plats && _found_short_plats.every { plat -> bwa_on_disk.contains([hap, plat]) }
+        }
+
+        log.info "mapping_dir re-entry: wm complete for haps ${wm_haps_done}, bwa complete for haps ${bwa_haps_done}"
+
+        // Pass only haps that need (re-)mapping to MAPPING_R1.
+        def r1_wm_refs_needed  = BUILD_REFS.out.wm_refs
+            .filter { hap, v, ref, fai, rep -> !wm_haps_done.contains(hap) }
+        def r1_bwa_refs_needed = BUILD_REFS.out.bwa_refs
+            .filter { hap, v, ref, fai, amb, ann, bwt, pac, sa -> !bwa_haps_done.contains(hap) }
+
+        MAPPING_R1( r1_wm_refs_needed, r1_bwa_refs_needed )
+
+        // Load completed BAMs from disk (only haps that are fully done).
+        // BAMs live in per-hap-platform subdirs: mdir/{_pfx}.{hap}.{plat}/{_pfx}.{hap}.{plat}.pri.bam
+        def r1_wm_from_disk = Channel.fromPath("${mdir}/${_pfx}.*.*/${_pfx}.*.*.pri.bam")
+            .filter { !(it.name ==~ /.*\.dedup\.pri\.bam$/) }
             .map { f ->
-                def m = f.name =~ /\.([^.]+)\.([^.]+)\.dedup\.pri\.bam$/
-                if (!m) error "mapping_dir: cannot parse hap/platform from filename: ${f.name}"
-                tuple(m[0][1], params.asm_ver, m[0][2], f, file("${f}.csi"))
+                def m = (f.name =~ /\.([^.]+)\.([^.]+)\.pri\.bam$/)[0]
+                tuple(m[1], params.asm_ver, m[2], f, file("${f}.bai"))
             }
+            .filter { hap, v, plat, bam, bai -> wm_haps_done.contains(hap) }
+
+        def r1_bwa_from_disk = Channel.fromPath("${mdir}/${_pfx}.*.*/${_pfx}.*.*.dedup.pri.bam")
+            .map { f ->
+                def m = (f.name =~ /\.([^.]+)\.([^.]+)\.dedup\.pri\.bam$/)[0]
+                tuple(m[1], params.asm_ver, m[2], f, file("${f}.csi"))
+            }
+            .filter { hap, v, plat, bam, csi -> bwa_haps_done.contains(hap) }
+
+        r1_wm_bams  = r1_wm_from_disk.mix( MAPPING_R1.out.wm_pri_bams )
+        r1_bwa_bams = r1_bwa_from_disk.mix( MAPPING_R1.out.bwa_mrg_bams )
     } else {
         // Run MAPPING unless mapping_dir covers all expected haps.
         // When only deepvariant_dir is set (no mapping re-entry), MAPPING still

@@ -25,8 +25,10 @@ workflow BUILD_REFS {
 
     main:
 
-    def no_file = file('NO_FILE')
-    def ebv     = params.ebv_fasta_gz ? file(params.ebv_fasta_gz) : no_file
+    def no_file_ebv  = file('NO_FILE_EBV')
+    def no_file_rdna = file('NO_FILE_RDNA')
+    def ebv          = params.ebv_fasta_gz ? file(params.ebv_fasta_gz) : no_file_ebv
+    def rdna         = params.rdna_exemplar_fasta_gz ? file(params.rdna_exemplar_fasta_gz) : no_file_rdna
 
     // Re-entry: if assemblies_dir is set, infer the pre-built FA.GZ paths from
     // asm_name + asm_ver and load them directly, skipping BUILD_HAP_REFERENCES
@@ -45,20 +47,20 @@ workflow BUILD_REFS {
         def refInputs = Channel.of(
             tuple('hap1', file(params.hap1_fasta_gz),
                   file(params.mito_exemplar_fasta_gz), ebv,
-                  file(params.rdna_exemplar_fasta_gz)),
+                  rdna),
             tuple('hap2', file(params.hap2_fasta_gz),
                   file(params.mito_exemplar_fasta_gz), ebv,
-                  file(params.rdna_exemplar_fasta_gz))
+                  rdna)
         )
         def builtHaps = BUILD_HAP_REFERENCES(refInputs)
 
-        // ---- dip (hap1 + hap2 + mito + [ebv] + rdna in one step) ----------
+        // ---- dip (hap1 + hap2 + mito + [ebv] + [rdna] in one step) ----------
         def dipRef = BUILD_DIP_REFERENCE(
             file(params.hap1_fasta_gz),
             file(params.hap2_fasta_gz),
             file(params.mito_exemplar_fasta_gz),
             ebv,
-            file(params.rdna_exemplar_fasta_gz)
+            rdna
         )
 
         allRefs = builtHaps.mix(dipRef)
