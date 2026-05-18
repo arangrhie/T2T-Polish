@@ -1,2 +1,5 @@
 *.DS_Store*
 dx_applets/.DS_Store
+nextflow/._*
+nextflow/*/._*
+nextflow/.nextflow*
