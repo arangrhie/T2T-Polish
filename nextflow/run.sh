@@ -55,10 +55,10 @@ ts=$(date +%Y%m%d_%H%M%S)
 
 nextflow run $tools/T2T-Polish/nextflow/main.nf \
     -c $1 \
-    ${2:-} \
+    "${@:2}" \
     -ansi-log false \
+	--ts ${ts} \
     -with-trace  logs/trace_${ts}.txt \
-    -with-report logs/report_${ts}.html \
     -with-dag    logs/dag_${ts}.svg &
 NF_PID=$!
 wait "$NF_PID"
