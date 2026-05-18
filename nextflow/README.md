@@ -13,7 +13,8 @@ The pipeline takes a [Verkko](https://github.com/marbl/verkko) assembly and maps
 nextflow/
 ├── ma> - `PEPPER_MARGIN_DV` and `DV_MERGE_CHR_VCFS` are always listed even when
 >   `--ont_chemistry r10` is set.  The R9/R10 branch is evaluated at runtime
->   from channel data; `-preview` sees both branches as registered slots.                  # Entry point: params + include + workflow {}
+>   from channel data; `-preview` sees both branches as registered slots.
+                             # Entry point: params + include + workflow {}
 ├── nextflow.config          # Global defaults; loads resources.config
 ├── resources.config         # Executor + per-label CPU/mem/time (Biowulf Slurm defaults)
 ├── user.config.example      # Copy → user.config and fill in paths/globs
@@ -63,7 +64,7 @@ main.nf
 │   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ - ┼ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┤
 │  MAPPING(wm_refs, bwa_refs)               │                   │  (workflows/mapping_r1.nf)
 │  hifi: ×3 haps   ont: ×1 dip (×3 with --ont_map_haps true)    │
-│  re-entry: mapping_dir skips WM + BWA mapping entirely          │
+│  re-entry: mapping_dir skips WM + BWA mapping entirely        │
 │                                           │                   │
 │  wm_refs.combine(reads)                   │                   │
 │     WINNOWMAP_MAP    (×haps×N)  [norm, 24c, 120g, 2d]         │
