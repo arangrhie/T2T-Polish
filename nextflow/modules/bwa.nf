@@ -16,7 +16,7 @@
 process BWA_INDEX {
     label 'quick_small'
     tag "${hap}"
-    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: false
+    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: true
 
     input:
     tuple val(hap), val(ver_from), path(ref_fa_gz), path(ref_fai)
@@ -52,7 +52,7 @@ process BWA_MAP {
     label 'norm_bwa_map'
     tag "${hap}:${ver_from}:${platform}:${r1.name}"
     publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}",
-               mode: 'link', overwrite: false,
+               mode: 'link', overwrite: true,
                enabled: params.keep_intermediates
 
     input:
