@@ -112,7 +112,8 @@ process BWA_MAP {
 process BWA_MERGE {
     label 'norm_merge_bwa'
     tag "${hap}:${ver_from}:${platform}"
-    publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}", mode: 'link', overwrite: true
+    publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}",
+                mode: 'link', overwrite: true
 
     input:
     tuple val(hap), val(ver_from), val(platform), path(bams), path(csis)
@@ -129,8 +130,8 @@ process BWA_MERGE {
     module load samtools || true
     num=\$(echo "${bams}" | wc -w)
     if [[ "\$num" -eq 1 ]]; then
-        mv ${bams} ${out}
-        mv ${csis} ${out}.csi
+        ln -L ${bams} ${out}
+        ln -L ${csis} ${out}.csi
     else
         ${params.samtools} merge --write-index -@${task.cpus} -O bam -b <(ls *.dedup.pri.bam) ${out}
     fi
