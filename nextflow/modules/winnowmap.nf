@@ -77,7 +77,7 @@ process WINNOWMAP_MAP {
     module load winnowmap/2.03 || true
     module load samtools       || true
 
-    winnowmap --MD -W ${rep_txt} -ax ${preset} -I12g -t${cpus} \
+    winnowmap --MD -W ${rep_txt} -ax ${preset} -I12g -t${cpus} -y \
         ${ref_fa_gz} ${reads} > ${tmp}/${out}.sam
 
     ${params.samtools} sort -@${cpus} -m2G \
