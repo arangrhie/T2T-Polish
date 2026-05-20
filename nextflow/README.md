@@ -2,19 +2,14 @@
 
 Nextflow DSL2 pipeline for polishing a T2T diploid assembly.
 
----
 
 ## Overview
 
-The pipeline takes a [Verkko](https://github.com/marbl/verkko) assembly and maps HiFi, ONT, Illumina, and/or Element reads against three reference builds — `hap1`, `hap2`, and `dip` — all in parallel. Slurm submission is handled natively by Nextflow; no external submit scripts are needed.
+The pipeline takes a [Verkko](https://github.com/marbl/verkko) assembly and maps HiFi, ONT, Illumina or Element reads against three reference builds — `hap1`, `hap2`, and `dip` — all in parallel. Slurm submission is handled natively by Nextflow; no external submit scripts are needed.
 
 
 ```
-nextflow/
-├── ma> - `PEPPER_MARGIN_DV` and `DV_MERGE_CHR_VCFS` are always listed even when
->   `--ont_chemistry r10` is set.  The R9/R10 branch is evaluated at runtime
->   from channel data; `-preview` sees both branches as registered slots.
-                             # Entry point: params + include + workflow {}
+nextflow/                    # Entry point: params + include + workflow {}
 ├── nextflow.config          # Global defaults; loads resources.config
 ├── resources.config         # Executor + per-label CPU/mem/time (Biowulf Slurm defaults)
 ├── user.config.example      # Copy → user.config and fill in paths/globs
@@ -36,7 +31,319 @@ nextflow/
     └── snv_candidates.nf    # SNV_CANDIDATES sub-workflow (bcftools + Merfin + consensus)
 ```
 
----
+## Setup
+
+### 1. Copy and edit the user config
+
+```sh
+ln -s /path/to/T2T-Polish/nextflow
+cp nextflow/user.config.example user.config
+# Edit user.config with your paths/globs
+```
+
+Key parameters in `user.config`:
+
+```groovy
+params {
+  // Point verkko_asm at the Verkko output directory.
+  // The assembly.*.fasta.gz files are expected inside it.
+  verkko_asm = '/path/to/verkko-output'
+  hap1_fasta_gz          = "${params.verkko_asm}/assembly.haplotype1.fasta.gz" // or pri for evaluation (ex. primary + sex chromosomes + MT + EBV)
+  hap2_fasta_gz          = "${params.verkko_asm}/assembly.haplotype2.fasta.gz" // or alt for evaluation (ex. alternate + unassigned + unloc + rDNA_morphs)
+  mito_exemplar_fasta_gz = "${params.verkko_asm}/assembly.mito.exemplar.fasta.gz"  // optional; omit if absent
+  rdna_exemplar_fasta_gz = "${params.verkko_asm}/assembly.rdna.exemplar.fasta.gz"  // optional; omit if absent
+  ebv_fasta_gz           = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional; omit if absent
+
+  // Glob patterns for reads. HiFi and ONT are required. Paired-end globs
+  // (illumina/element) must contain a {1,2} or R{1,2} wildcard so Nextflow
+  // can form R1/R2 pairs.
+  // At least one of read_glob_illumina or read_glob_element MUST be set
+  // when either platform is active (the pipeline will error otherwise).
+  read_glob_hifi     = '/path/to/hifi/*.fastq.gz'              // required
+  read_glob_ont      = '/path/to/ont/*.fastq.gz'               // required
+  read_glob_illumina = '/path/to/illumina/*.R{1,2}.fastq.gz'   // required if 'illumina' in platforms
+  read_glob_element  = '/path/to/element/*_R{1,2}.fastq.gz'    // required if 'element'  in platforms
+                                                               // (element preferred over illumina)
+  // Assembly name and version — combined as {asm_name}_{asm_ver} for all output
+  // filenames (BAMs, VCFs, FASTAs).  asm_ver is auto-incremented each polishing
+  // round (v0.1 → v0.2 → v0.3, …).  Both values MUST be quoted strings.
+  asm_name = 'assembly'   // e.g. 'bTaeGut7'; make sure to quote
+  asm_ver  = 'v0.1'       // e.g. 'v0.6'  — just the version tag, no name prefix
+
+  // Root of the shared tools installation.  Used to locate binaries such as
+  // merfin when they are not on PATH.  Set to the directory that contains
+  // subdirectories like merfin/1.1/bin/, k8/, etc.
+  tools = '/path/to/tools'
+
+  // k8 binary for SAM→PAF conversion (paftools.js sam2paf).
+  // https://github.com/attractivechaos/k8/releases
+  k8 = '/path/to/k8/k8'
+}
+```
+#### Tips
+
+* Mixed R9/R10 data: R10 data is preferred over R9.
+* ONT mapping: ONT is only mapping to `dip` by default whilest HiFi is always mapped to all 3 haps (`dip`, `hap1` and `hap2`). Set `--ont_map_haps true` in case ONT mappings to each haplotype is needed.
+* Short-read mapping: `element` is preferred over `illumina`.
+
+### 2. Run
+
+* Submit as a job to slurm (default: 2 rounds, output in `results` and intermediates in `work`)
+
+```sh
+sbatch nextflow/run.sh user.config
+```
+
+* Resume
+If it crashed for some reason, edit user.config to point to the intermediate paths of the results folder
+```sh
+sbatch nextflow/run.sh user.config -resume
+```
+
+* Run only 1 round of polishing
+```sh
+sbatch nextflow/run.sh user.config --polish_rounds 1
+```
+
+* Post-polish mode
+Stop after mapping for evaluation purposes. Skip DeepVariant and SNV_Candidates
+```sh
+sbatch nextflow/run.sh user.config --run_dv false
+```
+
+* Keep per-read / per-pair intermediate BAMs in the results directory
+```sh
+sbatch nextflow/run.sh -c user.config --keep_intermediates true
+```
+
+* Use R9 ONT chemistry
+```sh
+sbatch nextflow/run.sh -c user.config --ont_chemistry r9
+```
+
+* For debugging
+On an interactive node, it is possible to monitor the status of jobs in terminal. Not recommended for routine polishing as some jobes take more than a day.
+
+```sh
+module load nextflow
+
+nextflow run nextflow/main.nf -c user.config
+# or
+nextflow run nextflow/main.nf -c user.config -resume
+# Dry-run — validate params and print all registered process slots (no jobs submitted)
+nextflow run nextflow/main.nf -c user.config -preview
+# Stub run — executes the full dataflow graph; stub: blocks replace real commands
+# with touch/mkdir stubs so no real work is done.  NOTE: publishDir still fires,
+# so stub outputs ARE written to your results directory.  Use a throw-away outdir:
+nextflow run nextflow/main.nf -c user.config -stub --outdir stub_test
+```
+**`-preview` shows registered process slots, not jobs that will run.**
+A process appearing in `-preview` means it *could* run; it does
+not mean it *will* run.  To confirm what actually executed, check
+`nextflow log last -f name,status` after a real run.
+
+### 3. Monitoring and logs
+
+Nextflow writes logs in several places relative to the directory where you run `nextflow run`:
+
+| Path | Contents |
+|------|----------|
+| `.nextflow.log` | Mains engine log — config/startup errors, process submissions, retries. Rotated to `.nextflow.log.1`, `.nextflow.log.2`, … on subsequent runs. |
+| `work/<xx>/<hash>/` | One subdirectory per process execution. Contains `.command.sh` (exact script), `.command.log` (stdout + stderr), `.command.out`, `.command.err`, `.exitcode`. |
+
+**Graceful shutdown on Slurm:**
+When the pipeline head job is submitted via `run.sh`, SIGINT will be passed on to Nextflow for a graceful shutdown. This lets currently running jobs finish before exiting (equivalent to pressing Ctrl+C once interactively). Cancel child jobs or interactive head jobs with plain `scancel` to send SIGTERM/SIGKILL, which will immediately kill and stop the running step.
+
+| Command |	Signal sent |	Effect on Nextflow |
+| ------- | ----------- | ------------------ |
+| scancel --signal=INT <jobid> | SIGINT (Ctrl+C) | Waits for running child jobs to finish, then exits cleanly |
+| scancel <jobid> (default) | SIGTERM | Nextflow may not handle it gracefully — running child jobs can be orphaned |
+| scancel --signal=KILL <jobid> | SIGKILL | Immediate kill, uncatchable — definitely orphans child jobs |
+
+**Inspecting a failed run:**
+
+```sh
+# List all past runs:
+nextflow log
+
+# Show work directory, exit code, and status for the most recent run:
+nextflow log last -f name,status,exit,work_dir
+
+# Jump straight to the error output of any failed task:
+nextflow log last -f name,status,exit,work_dir | grep FAILED
+# then:
+cat work/xx/hash.../.command.log
+```
+
+
+### 4. Outputs
+
+```
+results/
+├── assemblies/
+│   ├── bTaeGut7_v0.1.hap1.fa.gz  (+.fai, .gzi, .repetitive_k15.txt, BWA index files)   ← initial (from Verkko)
+│   ├── bTaeGut7_v0.1.hap2.fa.gz
+│   ├── bTaeGut7_v0.1.dip.fa.gz
+│   ├── bTaeGut7_v0.2.hap1.fa.gz  (+.fai, .gzi, .repetitive_k15.txt)              ← Round 1 polished
+│   ├── bTaeGut7_v0.2.hap2.fa.gz
+│   ├── bTaeGut7_v0.2.dip.fa.gz
+│   ├── bTaeGut7_v0.3.hap1.fa.gz  (+.fai, .gzi, .repetitive_k15.txt)              ← Round 2 polished
+│   ├── bTaeGut7_v0.3.hap2.fa.gz
+│   └── bTaeGut7_v0.3.dip.fa.gz
+├── mapping/
+│   ├── bTaeGut7_v0.1.hap1.hifi/
+│   │   ├── *.sort.bam                          (only with --keep_intermediates true)
+│   │   ├── bTaeGut7_v0.1.hap1.hifi.bam         (merged)
+│   │   ├── bTaeGut7_v0.1.hap1.hifi.pri.bam     (filtered: -F0x104)
+│   │   └── bTaeGut7_v0.1.hap1.hifi.pri.paf
+│   ├── bTaeGut7_v0.1.hap1.illumina/
+│   │   ├── *.dedup.pri.bam                     (only with --keep_intermediates true)
+│   │   └── bTaeGut7_v0.1.hap1.illumina.dedup.pri.bam
+│   ├── bTaeGut7_v0.1.hap1.hifi_illumina/
+│   │   └── bTaeGut7_v0.1.hap1.hifi_illumina.bam  (hybrid merged BAM for DV Track A)
+│   ├── bTaeGut7_v0.1.hap2.{hifi,ont,illumina,element,hifi_illumina}/
+│   │   └── (same structure)
+│   └── bTaeGut7_v0.1.dip.{hifi,ont,illumina,element,hifi_illumina}/
+│       └── (same structure)
+├── deepvariant/                  (disable with --run_dv false)
+│   │
+│   │  Track A — Hybrid (all three haps)
+│   ├── bTaeGut7_v0.1.hap1.hifi_illumina.MQ5/   (hap1/hap2 → MQ 5)
+│   │   ├── examples/                            (make_examples output; always published)
+│   │   ├── dv_HYBRID_PACBIO_ILLUMINA_MQ5.hap1.vcf.gz   (+.tbi)
+│   │   └── dv_HYBRID_PACBIO_ILLUMINA_MQ5.hap1.gvcf.gz  (+.tbi)
+│   ├── bTaeGut7_v0.1.hap2.hifi_illumina.MQ5/
+│   │   └── (same structure)
+│   ├── bTaeGut7_v0.1.dip.hifi_illumina.MQ0/    (dip → MQ 0)
+│   │   ├── examples/
+│   │   ├── dv_HYBRID_PACBIO_ILLUMINA_MQ0.dip.vcf.gz    (+.tbi)
+│   │   └── dv_HYBRID_PACBIO_ILLUMINA_MQ0.dip.gvcf.gz   (+.tbi)
+│   │
+│   │  Track B — ONT, dip only
+│   │  R10 (default):
+│   ├── bTaeGut7_v0.1.dip.ont.MQ0/
+│   │   ├── examples/
+│   │   ├── dv_ONT_R104_MQ0.dip.vcf.gz   (+.tbi)
+│   │   └── dv_ONT_R104_MQ0.dip.gvcf.gz  (+.tbi)
+│   │  R9 (--ont_chemistry r9):
+│   └── bTaeGut7_v0.1.dip.ont.MQ0/
+│       └── dv_ONT_R9_MQ0.dip.vcf.gz     (+.tbi)   (no gVCF)
+└── snv_candidates/                  (disable with --run_snv_candidates false)
+    │
+    │  Round 1 outputs (ver_from=v0.1, ver_to=v0.2):
+    ├── v0.1_to_v0.2/
+    │   ├── snv_candidates.merfin-loose.vcf.gz (+.tbi)  — Merfin-validated SNV candidates
+    │   ├── v0.2.dip.fa.gz   (+.fai, .gzi)  — polished dip assembly
+    │   ├── v0.2.hap1.fa.gz  (+.fai, .gzi)  — hap1 extracted from polished dip
+    │   ├── v0.2.hap2.fa.gz  (+.fai, .gzi)  — hap2 extracted from polished dip
+    │   ├── v0.1_to_v0.2.dip.chain          — liftover chain (dip)
+    │   └── intermediates/                  — only with --keep_snv_intermediates true
+    │       ├── hybrid_to_dip.PASS.merfin-strict.vcf.gz (+.tbi)
+    │       ├── hybrid_to_dip.PASS.vcf.gz (+.tbi)
+    │       ├── hybrid_to_hap.PASS.vcf.gz (+.tbi)
+    │       ├── ont_to_dip.PASS.vcf.gz (+.tbi)
+    │       └── snv_pre_merfin.vcf.gz (+.tbi)
+    │
+    │  Round 2 outputs (ver_from=v0.2, ver_to=v0.3):
+    └── v0.2_to_v0.3/
+        ├── snv_candidates.merfin-loose.vcf.gz (+.tbi)
+        ├── v0.3.dip.fa.gz   (+.fai, .gzi)
+        ├── v0.3.hap1.fa.gz  (+.fai, .gzi)
+        ├── v0.3.hap2.fa.gz  (+.fai, .gzi)
+        ├── v0.2_to_v0.3.dip.chain
+        └── intermediates/                  — only with --keep_snv_intermediates true
+    (additional rounds follow the same pattern: v0.3_to_v0.4/, etc.)
+```
+
+
+### 5. Re-enter from existing results
+
+By default, the pipeline retries a failed job one more time to avoid stoppings from server issues.
+
+In anycases, if a run was corrupted or `work` doesn't exists, you can skip finished stages
+by pointing the pipeline at the published `results`.
+This avoids re-running from scratch. All re-entry params default to `null` (disabled).
+
+| Param | Skips | Example value |
+|---|---|---|
+| `assemblies_dir` | `BUILD_HAP_REFERENCES` + `BUILD_DIP_REFERENCE` | `'results/assemblies'` |
+| `mapping_dir` | WM mapping, BWA mapping, and MERGE_HYBRID (per hap and per platform combination that is already present) | `'results/mapping'` |
+| `deepvariant_dir` | DV `make_examples` step 1 (per hap — only missing haps are re-run) | `'results/deepvariant'` |
+
+Set `mapping_dir` along with `deepvariant_dir`.
+
+```groovy
+// In user.config — example: re-enter at call_variants (step 2), all examples done
+params {
+  // Pre-built refs — skips BUILD_HAP_REFERENCES + BUILD_DIP_REFERENCE
+  // Filenames inferred: bTaeGut7_v0.6.{hap1,hap2,dip}.fa.gz (+.gzi, .fai)
+  assemblies_dir  = 'results/assemblies'
+  // Pre-built BAMs — skips WM + BWA mapping and MERGE_HYBRID (per hap)
+  mapping_dir     = 'results/mapping'
+  // Pre-built examples — skips make_examples (step 1)
+  deepvariant_dir = 'results/deepvariant'
+}
+```
+
+### 6. Adjust resources for your cluster (optional)
+
+Resource allocations (CPUs, memory, wall-time, queue names, `--gres`) are in
+`resources.config`.  The defaults target the **NIH Biowulf** Slurm cluster.
+If you are on a different system:
+
+```sh
+cp resources.config my_resources.config
+# Edit queue names, memory limits, clusterOptions, executor, etc.
+```
+
+Then tell Nextflow to use your copy instead of the default one.
+Either add this line at the **top** of your `user.config`:
+
+```groovy
+includeConfig '/absolute/path/to/my_resources.config'
+```
+
+Or pass it on the command line (it overrides `resources.config`):
+
+```sh
+nextflow run main.nf -c user.config -c my_resources.config
+```
+
+For non-Slurm schedulers change `executor = 'slurm'` to the appropriate
+Nextflow executor name (`'sge'`, `'lsf'`, `'pbspro'`, `'local'`, …).
+See the [Nextflow executor docs](https://www.nextflow.io/docs/latest/executor.html).
+
+### 7. Full parameters
+
+| Parameter               | Default                       | Description                         |
+|-------------------------|-------------------------------|-------------------------------------|
+| `params.outdir`         | `results`                     | Output directory               |
+| `params.assemblies_dir` | `null`                        | Path to a directory containing pre-built `{asm_name}_{asm_ver}.{hap}.fa.gz` files (+ `.gzi`, `.fai`). When set, `BUILD_HAP_REFERENCES` and `BUILD_DIP_REFERENCE` are skipped and the Verkko FASTA params are not required. |
+| `params.mapping_dir`    | `null`                        | Path to the `mapping/` output directory. BAMs are in per-hap subdirectories (`{pfx}.{hap}.{plat}/` for WM/BWA, `{pfx}.{hap}.{combo}/` for hybrid). All are discovered automatically from the `{asm_name}_{asm_ver}` prefix. Only missing combinations are re-submitted. |
+| `params.deepvariant_dir`| `null`                        | Path to the `deepvariant/` output directory. DV `examples/` dirs are discovered automatically. Only missing haps are re-submitted. |
+| `params.asm_name`       | `assembly`                    | Assembly name prefix (e.g. `'bTaeGut7'`). Combined with `asm_ver` to form filenames: `{asm_name}_{asm_ver}.{hap}.…` Must be a quoted string e.g. `''` in the config. |
+| `params.asm_ver`        | `v0.1`                        | Version tag for the initial assembly (e.g. `'v0.6'`). Auto-bumped each polishing round. Must be a quoted string e.g. `''` — without quotes Groovy parses `v0.6` as a method call and throws an error. |
+| `params.platforms`      | `hifi,ont,illumina`   | Comma-separated list to run         |
+| `params.samtools`       | `samtools`                    | Path to samtools executable         |
+| `params.mapping_outdir` | `${outdir}/mapping`           | Output directory for BAMs/PAFs and hybrid merged BAMs |
+| `params.keep_intermediates` | `false`                   | Keep per-read/per-pair intermediate BAMs in results (see below) |
+| `params.ont_map_haps`       | `false`                   | Map ONT reads to hap1 and hap2 in addition to dip. ONT→dip is sufficient for polishing. |
+| `params.dv_outdir`          | `${outdir}/deepvariant`   | Output directory for DV VCFs        |
+| `params.dv_sample`          | _(hap tag)_               | Sample name written into VCF header |
+| `params.dv_mq_hap`          | `5`                       | MQ filter applied to hap1/hap2 merged BAMs |
+| `params.dv_mq_dip`          | `0`                       | MQ filter applied to dip merged BAMs |
+| `params.dv_n_shard`         | `12`                      | Number of `make_examples` shards (= step-1 CPUs) |
+| `params.dv_long_platforms`  | `hifi`                    | Long-read platform(s) used in hybrid merge |
+| `params.dv_short_platforms` | `illumina,element`        | Short-read platform(s) used in hybrid merge |
+| `params.ont_chemistry`      | `r10`                     | ONT chemistry for Track B dip calling: `r10` (DeepVariant `ONT_R104`) or `r9` (PEPPER-Margin-DV). **If you have mixed R9/R10 data, use r10 only.** |
+| `params.run_snv_candidates`  | `true`                    | Run SNV candidate collection + Merfin after DeepVariant. Disable with `--run_snv_candidates false`. |
+| `params.snv_outdir`          | `${outdir}/snv_candidates`| Output directory for SNV candidate VCFs        |
+| `params.hybrid_meryl`        | _(required)_              | Path to hybrid (HiFi + Illumina/Element) read k-mer meryl database (`*.k31.meryl` dir) |
+| `params.merfin_peak`         | _(required)_              | Integer peak coverage value for Merfin (from GenomeScope / meryl histogram) |
+| `params.merfin`              | `merfin`                  | Path or command name for the `merfin` binary    |
+| `params.keep_snv_intermediates` | `false`               | Publish intermediate VCFs from `SNV_FILTER_INTERSECT` |
+| `params.asm_ver_next`        | _(auto-bumped)_           | Version tag for the first polished assembly (e.g. `v0.2`); if unset, the trailing integer of `asm_ver` is incremented |
+| `params.polish_rounds`       | `2`                       | Number of SNV polishing rounds to run (1–5). |
 
 ## Execution graph
 
@@ -146,449 +453,41 @@ Final outputs per round  (snv_candidates/):
 ```
 
 **Concurrency notes:**
-- `BUILD_HAP_REFERENCES` for hap1 and hap2 runs simultaneously with `BUILD_DIP_REFERENCE` for dip.
-- `MERYL_REPETITIVE` and `BWA_INDEX` fire in parallel the moment each ref is ready — they do not wait for each other.
-- `WINNOWMAP_MAP` (HiFi) and `BWA_MAP` fan out across all three haplotypes simultaneously. `WINNOWMAP_MAP` for ONT maps only to dip by default; set `--ont_map_haps true` to also map to hap1 and hap2. Within each haplotype, every read file / read pair gets its own Slurm job.
-- Track A (hybrid) and Track B (ONT) run fully in parallel — the hybrid jobs and the ONT-only dip jobs are independent.
-- `MERGE_HYBRID` → DV three-step runs independently for each of hap1, hap2, dip in parallel, each with its own reference.
-- R9 Track B scatters one `PEPPER_MARGIN_DV` GPU job per chromosome; all chromosomes run simultaneously then merge.
+- `BUILD_HAP_REFERENCES` builds references for hap1 and hap2 alongside `BUILD_DIP_REFERENCE` which builds the dip reference. When `assemblies_dir` is set, all three refs are loaded from disk and these builders are skipped.
+- `MERYL_REPETITIVE` and `BWA_INDEX` are submitted independently as soon as each ref is available.
+- `mapping_dir` re-entry is only implemented for round 1. The workflow scans the published `results/mapping/` tree, remaps only the hap/platform combinations that are missing, and mixes those new outputs with the files already on disk.
+- `deepvariant_dir` re-entry is also round-1 only. Existing `examples/` dirs and `call_variants_output` shards are reused per hap/combo/MQ item; anything missing is re-run, and `DV_POSTPROCESS` still needs the examples dir staged for each item.
+- `WINNOWMAP_MAP` (HiFi) and `BWA_MAP` submits across the active haplotypes and read groups. `WINNOWMAP_MAP` for ONT maps only to dip by default. Within each haplotype, every read file / read pair gets its own Slurm job.
+- Track A (hybrid) and Track B (ONT) run in parallel. The hybrid merge/call/postprocess chain runs independently per hap, while the ONT branch runs only on dip.
+- `PEPPER_MARGIN_DV` and `DV_MERGE_CHR_VCFS` are always registered, but the r9 path receives input only when `--ont_chemistry r9`; the r10 path is the active one otherwise. R9 scatters one GPU job per chromosome, then merges the per-chromosome VCFs.
 - `SNV_FILTER_INTERSECT` waits for all four DV VCFs (hybrid hap1, hybrid hap2, hybrid dip, ONT dip) to be ready before starting. `SNV_MERFIN`, `SNV_APPLY_CONSENSUS`, and `PREPARE_NEXT_ROUND` run sequentially within each round.
-- Each polishing round runs fully sequentially after the previous one — Round N's `PREPARE_NEXT_ROUND` output feeds Round N+1's `BUILD_REFS_FROM_FILES`. Rounds 2+ skip `BUILD_HAP_REFERENCES`/`BUILD_DIP_REFERENCE` and run only `MERYL_REPETITIVE` + `BWA_INDEX` on the polished FASTAs.
-- **Mixed R9/R10 data:** set `--ont_chemistry r10`. R10 is preferred — it uses DeepVariant's native `ONT_R104` model and produces a gVCF alongside the VCF. R9 requires the separate PEPPER-Margin-DeepVariant toolchain and does not emit a gVCF.
-- `×3` = one job per hap (hap1, hap2, dip); `×N` / `×M` = one job per read file / pair; `×N_chr` = one job per chromosome/contig.
-- **Winnowmap merge/filter/PAF**: `×4` by default with HiFi mapped to all three haps + ONT→dip (HiFi always maps all haps); `×6` with `--ont_map_haps true` (ONT also maps to hap1 and hap2).
-- **BWA merge**: `×3` per active short-read platform (always all three haps); `×6` when both `illumina` and `element` are in `--platforms`.
+- `PREPARE_NEXT_ROUND` feeds the next round's `BUILD_REFS_FROM_FILES`, using the polished FASTAs.
 
----
 
 ## Process → original script mapping
 
-| Original Slurm script      | Nextflow process     | Label / resources                               |
+| Original Slurm script      | Nextflow process     | Label / resources (as in resources.config)      |
 |----------------------------|----------------------|-------------------------------------------------|
-| _(ref build — hap)_        | `BUILD_HAP_REFERENCES` | `norm_build_ref` (4 CPU / 16g / 2h)            |
-| _(ref build — dip)_        | `BUILD_DIP_REFERENCE`  | `norm_build_ref` (4 CPU / 16g / 2h)            |
+| _(ref build — hap)_        | `BUILD_HAP_REFERENCES` | `norm_build_ref` (4 CPU / 16g / 2h)           |
+| _(ref build — dip)_        | `BUILD_DIP_REFERENCE`  | `norm_build_ref` (4 CPU / 16g / 2h)           |
 | `winnowmap/init.sh`        | `MERYL_REPETITIVE`   | `quick_meryl` (12 CPU / 24g / 30min)            |
 | `winnowmap/map.sh`         | `WINNOWMAP_MAP`      | `norm_map` (24 CPU / 120g / 2d / 900g scratch)  |
 | `winnowmap/merge.sh`       | `WINNOWMAP_MERGE`    | `norm_merge_wm` (48 CPU / 60g / 1d)             |
 | `winnowmap/filt.sh`        | `WINNOWMAP_FILTER`   | `norm_filter` (12 CPU / 8g / 1d)                |
 | `coverage/sam2paf.sh`      | `SAM2PAF`            | `norm_filter` (12 CPU / 8g / 1d)                |
 | `bwa/bwa_index.sh`         | `BWA_INDEX`          | `quick_small` (4 CPU / 10g / 4h)                |
-| `bwa/bwa.sh`               | `BWA_MAP`            | `norm_bwa_map` (24 CPU / 120g / 2d / 2000g scratch) |
+| `bwa/bwa.sh`               | `BWA_MAP`            | `norm_bwa_map` (24 CPU / 120g / 5d / 2000g scratch) |
 | `bwa/merge.sh`             | `BWA_MERGE`          | `norm_merge_bwa` (24 CPU / 48g / 1d)            |
 | `deepvariant/merge_hybrid.sh` | `MERGE_HYBRID`    | `norm_merge_hybrid` (12 CPU / 24g / 4h)         |
-| `deepvariant/step1_with_minqual.sh` | `DV_MAKE_EXAMPLES` | `norm_dv_make_examples` (12 CPU / 36g / 3d / 1000g scratch) |
+| `deepvariant/step1_with_minqual.sh` | `DV_MAKE_EXAMPLES` | `norm_dv_make_examples` (12 CPU / 48g / 10d / 1000g scratch) |
 | `deepvariant/step2_with_minqual.sh` | `DV_CALL_VARIANTS` | `norm_dv_call_variants` (12 CPU / 48g / 12h / 1 GPU) |
-| `deepvariant/step3_with_minqual.sh` | `DV_POSTPROCESS`   | `norm_dv_postprocess` (12 CPU / 120g / 12h)    |
+| `deepvariant/step3_with_minqual.sh` | `DV_POSTPROCESS`   | `norm_dv_postprocess` (12 CPU / 160g / 12h)    |
 | `deepvariant/ont_r9_pepper_margin_dv.sh` | `PEPPER_MARGIN_DV` | `norm_pepper_margin_dv` (24 CPU / 48g / 2h / k80×4 GPU, per-chr) |
 | `deepvariant/merge_per_chr_vcfs.sh` | `DV_MERGE_CHR_VCFS` | `quick_small` (4 CPU / 10g / 4h)             |
 | `variant_call/snv_candidates.sh` (bcftools steps) | `SNV_FILTER_INTERSECT` | `quick_snv_filter` (12 CPU / 12g / 1h) |
 | `variant_call/snv_candidates.sh` (merfin steps)   | `SNV_MERFIN`           | `norm_snv_merfin` (12 CPU / 120g / 12h) |
 | _(apply candidates to each hap assembly)_         | `SNV_APPLY_CONSENSUS`  | `quick_snv_filter` (12 CPU / 12g / 1h) |
 | _(rebuild hap1/hap2/dip for the next round)_      | `PREPARE_NEXT_ROUND`   | `quick_snv_filter` (12 CPU / 12g / 1h) |
-
----
-
-## Setup
-
-### 1. Copy and edit the user config
-
-```sh
-cp user.config.example user.config
-# Edit user.config with your paths/globs
-```
-
-Key parameters in `user.config`:
-
-```groovy
-params {
-  // Point verkko_asm at the Verkko output directory.
-  // The assembly.*.fasta.gz files are expected inside it.
-  verkko_asm = '/path/to/verkko-output'
-
-  hap1_fasta_gz          = "${params.verkko_asm}/assembly.haplotype1.fasta.gz"
-  hap2_fasta_gz          = "${params.verkko_asm}/assembly.haplotype2.fasta.gz"
-  ebv_fasta_gz           = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional; omit if absent
-  mito_exemplar_fasta_gz = "${params.verkko_asm}/assembly.mito.exemplar.fasta.gz"
-  rdna_exemplar_fasta_gz = "${params.verkko_asm}/assembly.rdna.exemplar.fasta.gz"
-
-  // Glob patterns for reads. HiFi and ONT are required. Paired-end globs
-  // (illumina/element) must contain a {1,2} or R{1,2} wildcard so Nextflow
-  // can form R1/R2 pairs.
-  // At least one of read_glob_illumina or read_glob_element MUST be set
-  // when either platform is active (the pipeline will error otherwise).
-  read_glob_hifi     = '/path/to/hifi/*.fastq.gz'              // required
-  read_glob_ont      = '/path/to/ont/*.fastq.gz'               // required
-  read_glob_illumina = '/path/to/illumina/*.R{1,2}.fastq.gz'   // required if 'illumina' in platforms
-  read_glob_element  = '/path/to/element/*_R{1,2}.fastq.gz'    // required if 'element'  in platforms
-                                                               // (at least one of the two must be set)
-
-  // k8 binary for SAM→PAF conversion (paftools.js sam2paf).
-  // https://github.com/attractivechaos/k8/releases
-  k8 = '/path/to/k8/k8'
-}
-```
-
-Optional parameters (with defaults):
-
-| Parameter               | Default                       | Description                         |
-|-------------------------|-------------------------------|-------------------------------------|
-| `params.outdir`         | `results`                     | Root output directory               |
-| `params.assemblies_dir` | `null`                        | Path to a directory containing pre-built `{asm_name}_{asm_ver}.{hap}.fa.gz` files (+ `.gzi`, `.fai`). When set, `BUILD_HAP_REFERENCES` and `BUILD_DIP_REFERENCE` are skipped and the Verkko FASTA params are not required. |
-| `params.mapping_dir`    | `null`                        | Path to the `mapping/` output directory. BAMs are in per-hap subdirectories (`{pfx}.{hap}.{plat}/` for WM/BWA, `{pfx}.{hap}.{combo}/` for hybrid); all are discovered automatically from the `{asm_name}_{asm_ver}` prefix. WM and BWA mapping are skipped; hybrid merge uses a per-item join (only missing haps are re-merged). |
-| `params.deepvariant_dir`| `null`                        | Path to the `deepvariant/` output directory. DV `examples/` dirs are discovered automatically. `make_examples` uses a per-item join (only missing haps are re-run). |
-| `params.asm_name`       | `assembly`                    | Assembly name prefix (e.g. `bTaeGut7`). Combined with `asm_ver` to form filenames: `{asm_name}_{asm_ver}.{hap}.…` Must be a **quoted string** in the config. |
-| `params.asm_ver`        | `v0.1`                        | Version tag for the initial assembly (e.g. `v0.6`). Auto-bumped each polishing round. Must be a **quoted string** — without quotes Groovy parses `v0.6` as a method call and throws an error. |
-| `params.platforms`      | `hifi,ont,illumina,element`   | Comma-separated list to run         |
-| `params.samtools`       | `samtools`                    | Path to samtools executable         |
-| `params.mapping_outdir` | `${outdir}/mapping`           | Output directory for BAMs/PAFs and hybrid merged BAMs |
-| `params.keep_intermediates` | `false`                   | Keep per-read/per-pair intermediate BAMs in results (see below) |
-| `params.ont_map_haps`       | `false`                   | Also map ONT reads to hap1 and hap2 (in addition to dip). Off by default — ONT→dip is sufficient for DeepVariant. |
-| `params.dv_outdir`          | `${outdir}/deepvariant`   | Output directory for DV VCFs        |
-| `params.dv_sample`          | _(hap tag)_               | Sample name written into VCF header |
-| `params.dv_mq_hap`          | `5`                       | MQ filter applied to hap1/hap2 merged BAMs |
-| `params.dv_mq_dip`          | `0`                       | MQ filter applied to dip merged BAMs |
-| `params.dv_n_shard`         | `12`                      | Number of `make_examples` shards (= step-1 CPUs) |
-| `params.dv_long_platforms`  | `hifi`                    | Long-read platform(s) used in hybrid merge |
-| `params.dv_short_platforms` | `illumina,element`        | Short-read platform(s) used in hybrid merge |
-| `params.ont_chemistry`      | `r10`                     | ONT chemistry for Track B dip calling: `r10` (DeepVariant `ONT_R104`) or `r9` (PEPPER-Margin-DV). **If you have mixed R9/R10 data, use `r10`.** |
-| `params.keep_dv_intermediates` | `false`                | Publish `make_examples` tfrecords and `call_variants` output. The `examples/` directory is always published regardless. |
-| `params.run_snv_candidates`  | `true`                    | Run SNV candidate collection + Merfin after DeepVariant. Disable with `--run_snv_candidates false`. |
-| `params.snv_outdir`          | `${outdir}/snv_candidates`| Output directory for SNV candidate VCFs        |
-| `params.hybrid_meryl`        | _(required)_              | Path to hybrid (HiFi + Illumina/Element) read k-mer meryl database (`*.k31.meryl` dir) |
-| `params.merfin_peak`         | _(required)_              | Integer peak coverage value for Merfin (from GenomeScope / meryl histogram) |
-| `params.merfin`              | `merfin`                  | Path or command name for the `merfin` binary    |
-| `params.keep_snv_intermediates` | `false`               | Publish intermediate VCFs from `SNV_FILTER_INTERSECT` |
-| `params.asm_ver_next`        | _(auto-bumped)_           | Version tag for the first polished assembly (e.g. `v0.2`); if unset, the trailing integer of `asm_ver` is incremented |
-| `params.polish_rounds`       | `2`                       | Number of SNV polishing rounds to run (1–5). |
-
-> **Intermediate BAMs** — by default the per-read `*.sort.bam` files produced
-> by `WINNOWMAP_MAP` and the per-pair `*.dedup.pri.bam` files produced by
-> `BWA_MAP` are *not* copied to the results directory; they remain available
-> in Nextflow's `work/` cache for re-use with `-resume`.  Set
-> `--keep_intermediates true` on the command line (or
-> `params.keep_intermediates = true` in `user.config`) to also publish them
-> alongside the merged BAMs.
-
-### 3. Re-enter from existing results (optional)
-
-If a run was interrupted after some stages completed, you can skip those stages
-by pointing the pipeline at the already-published files instead of re-running
-from scratch. All re-entry params default to `null` (disabled).
-
-| Param | Skips | Example value |
-|---|---|---|
-| `assemblies_dir` | `BUILD_HAP_REFERENCES` + `BUILD_DIP_REFERENCE` | `'/path/to/results/assemblies'` |
-| `mapping_dir` | WM mapping, BWA mapping, and MERGE_HYBRID (per hap — only missing hybrid BAMs are re-merged) | `'/path/to/results/mapping'` |
-| `deepvariant_dir` | DV `make_examples` step 1 (per hap — only missing haps are re-run) | `'/path/to/results/deepvariant'` |
-
-> **Use literal paths.** Cross-file `params.*` references in GStrings are not
-> resolved at config parse time and cause `Unknown config attribute` errors.
->
-> `assemblies_dir` must point to a directory containing
-> `{asm_name}_{asm_ver}.{hap1,hap2,dip}.fa.gz` with matching `.gzi` and `.fai`
-> files alongside — exactly as published by `BUILD_HAP_REFERENCES` /
-> `BUILD_DIP_REFERENCE`.  The filenames are inferred from `asm_name` and
-> `asm_ver`; you do not need to specify them individually.  When set, the
-> Verkko FASTA params (`hap1_fasta_gz`, etc.) are not required.
-> `MERYL_REPETITIVE` and `BWA_INDEX` still run unless their outputs
-> (`{asm_name}_{asm_ver}.{hap}.repetitive_k15.txt` and the five BWA index
-> files) are also present in that directory.
->
-> `mapping_dir` must point to the `mapping/` output directory.  Winnowmap pri
-> BAMs (`{pfx}.{hap}.{plat}/{pfx}.{hap}.{plat}.pri.bam`), BWA BAMs
-> (`{pfx}.{hap}.{plat}/{pfx}.{hap}.{plat}.dedup.pri.bam`), and hybrid merged
-> BAMs (`{pfx}.{hap}.{combo}/{pfx}.{hap}.{combo}.bam`) are all discovered
-> automatically from the `{asm_name}_{asm_ver}` prefix.  WM mapping, BWA
-> mapping, and `MERGE_HYBRID` are all skipped entirely at graph-build time —
-> the process is never wired into the execution graph.
->
-> `deepvariant_dir` must point to the `deepvariant/` output directory.
-> Examples dirs (`{pfx}.{hap}.{combo}.MQ{mq}/examples`) are discovered
-> automatically.  `DV_MAKE_EXAMPLES` is skipped entirely at graph-build time —
-> the process is never wired into the execution graph.  If a hap is missing
-> from `deepvariant_dir`, the pipeline will silently emit no items for that
-> hap rather than re-running `make_examples`; if you need partial re-entry,
-> unset `deepvariant_dir` and provide `mapping_dir` instead so BAMs are
-> available for the missing hap.  MAPPING still runs when only
-> `deepvariant_dir` is set (no `mapping_dir` provided).
-
-```groovy
-// In user.config — example: re-enter at call_variants (step 2), all examples done
-params {
-  asm_name        = 'bTaeGut7'              // must be a quoted string
-  asm_ver         = 'v0.6'                  // must be a quoted string
-  // Pre-built refs — skips BUILD_HAP_REFERENCES + BUILD_DIP_REFERENCE
-  // Filenames inferred: bTaeGut7_v0.6.{hap1,hap2,dip}.fa.gz (+.gzi, .fai)
-  assemblies_dir  = '/path/to/results/assemblies'
-  // Pre-built BAMs — skips WM + BWA mapping and MERGE_HYBRID (per hap)
-  mapping_dir     = '/path/to/results/mapping'
-  // Pre-built examples — skips make_examples (step 1)
-  deepvariant_dir = '/path/to/results/deepvariant'
-}
-```
-
-### 4. Adjust resources for your cluster (optional)
-
-Resource allocations (CPUs, memory, wall-time, queue names, `--gres`) are in
-`resources.config`.  The defaults target the **NIH Biowulf** Slurm cluster.
-If you are on a different system:
-
-```sh
-cp resources.config my_resources.config
-# Edit queue names, memory limits, clusterOptions, executor, etc.
-```
-
-Then tell Nextflow to use your copy instead of the default one.
-Either add this line at the **top** of your `user.config`:
-
-```groovy
-includeConfig '/absolute/path/to/my_resources.config'
-```
-
-Or pass it on the command line (it overrides `resources.config`):
-
-```sh
-nextflow run main.nf -c user.config -c my_resources.config
-```
-
-For non-Slurm schedulers change `executor = 'slurm'` to the appropriate
-Nextflow executor name (`'sge'`, `'lsf'`, `'pbspro'`, `'local'`, …).
-See the [Nextflow executor docs](https://www.nextflow.io/docs/latest/executor.html).
-
-### 5. Run
-
-```sh
-# Submit as a job to slurm
-
-# load nextflow and link the nextflow path
-module load nextflow
-ln -s /data/Phillippy/tools/T2T-Polish/nextflow
-
-cp nextflow/user.config.example user.config ## edit user.config
-
-# submit (default: 2 rounds, output in results/)
-sbatch nextflow/run.sh user.config
-
-# If it crashed for some reason, edit user.config to point to the intermediate paths of the results folder
-sbatch nextflow/run.sh user.config -resume
-
-# Standard run
-nextflow run main.nf -c user.config -ansi-log false \
-  -with-trace logs/trace.txt -with-report logs/report.html -overwrite
-
-# Resume after a partial run (requires intact work/ directory)
-nextflow run main.nf -c user.config -resume
-
-# Map ONT reads to hap1 and hap2 as well (default: dip only)
-nextflow run main.nf -c user.config --ont_map_haps true
-
-# Keep per-read / per-pair intermediate BAMs in the results directory
-nextflow run main.nf -c user.config --keep_intermediates true
-
-# Disable SNV candidate collection (mapping + DeepVariant only)
-nextflow run main.nf -c user.config --run_snv_candidates false
-
-# Use R9 ONT chemistry for Track B (PEPPER-Margin-DV on dip, per-chromosome scatter)
-nextflow run main.nf -c user.config --ont_chemistry r9
-
-# Run only 1 polishing round
-nextflow run main.nf -c user.config --polish_rounds 1
-
-# Dry-run — validate params and print all registered process slots (no jobs submitted)
-nextflow run main.nf -c user.config -preview
-
-# Stub run — executes the full dataflow graph; stub: blocks replace real commands
-# with touch/mkdir stubs so no real work is done.  NOTE: publishDir still fires,
-# so stub outputs ARE written to your results directory.  Use a throw-away outdir:
-nextflow run main.nf -c user.config -stub --outdir stub_test
-```
-
-> **`-preview` shows registered process slots, not jobs that will run.**
-> Every process that is wired into the workflow graph appears in the list with
-> status `[-  ]` ("no tasks yet"), regardless of whether it will actually
-> execute.  In particular:
->
-> - `BUILD_HAP_REFERENCES` and `BUILD_DIP_REFERENCE` do **not** appear when
->   `assemblies_dir` is set, because they are guarded by a plain Groovy `if`
->   block that is evaluated at graph-build time — `-preview` can resolve it.
-> - `MERYL_REPETITIVE` and `BWA_INDEX` **always** appear even when
->   `assemblies_dir` is set.  Their skip logic is a runtime `channel.branch`
->   that checks whether the output file already exists on disk — `-preview`
->   cannot evaluate file-system state, so both slots are always registered.
-> - `MERGE_HYBRID_R1` is always listed because it is registered in
->   `DEEPVARIANT_R1`.  When `mapping_dir` is set it only fires for hap/combo
->   items whose hybrid BAM is absent from that directory; present items bypass
->   it via the per-item join.  `-preview` cannot evaluate this — it has no data.
-> - `MAPPING_R1:WINNOWMAP_*` / `BWA_*` do **not** appear in `-preview` when
->   `mapping_dir` is set, because in that case `MAPPING_R1` is never called.
->   `MAPPING_R2:*` (and later rounds) **always** appear because per-round
->   re-entry via `mapping_dir` is only implemented for Round 1.
-> - `PEPPER_MARGIN_DV` and `DV_MERGE_CHR_VCFS` are always listed even when
->   `--ont_chemistry r10` is set.  The R9/R10 branch is evaluated at runtime
->   from channel data; `-preview` sees both branches as registered slots.
->
-> In short: a process appearing in `-preview` means it *could* run; it does
-> not mean it *will* run.  To confirm what actually executed, check
-> `nextflow log last -f name,status` after a real run.
-
-**Graceful shutdown on Slurm:**  
-When the pipeline head job is submitted via `sbatch`, use `scancel --signal=INT <jobid>` rather than plain `scancel`. This sends SIGINT to Nextflow, which lets currently running jobs finish before exiting (equivalent to pressing Ctrl+C once interactively). Plain `scancel` sends SIGTERM/SIGKILL and may leave orphaned Slurm jobs.
-
-| Command |	Signal sent |	Effect on Nextflow |
-| ------- | ----------- | ------------------ |
-| scancel --signal=INT <jobid> | SIGINT (Ctrl+C) | Nextflow catches it, waits for running child jobs to finish, then exits cleanly |
-| scancel <jobid> (default) | SIGTERM | Nextflow may not handle it gracefully — running child jobs can be orphaned |
-| scancel --signal=KILL <jobid> | SIGKILL | Immediate kill, uncatchable — definitely orphans child jobs |
-
-
----
-
-## Monitoring and logs
-
-Nextflow writes logs in several places relative to the directory where you run `nextflow run`:
-
-| Path | Contents |
-|------|----------|
-| `.nextflow.log` | Main engine log — config/startup errors, process submissions, retries. Rotated to `.nextflow.log.1`, `.nextflow.log.2`, … on subsequent runs. |
-| `work/<xx>/<hash>/` | One subdirectory per process execution. Contains `.command.sh` (exact script), `.command.log` (stdout + stderr), `.command.out`, `.command.err`, `.exitcode`. |
-
-**Useful run flags:**
-
-```sh
-# Plain line-by-line output (better for log files / non-interactive sessions):
-nextflow run main.nf -c user.config -ansi-log false
-
-# Write a TSV of task timings, CPU, memory, and I/O:
-nextflow run main.nf -c user.config -with-trace trace.txt
-
-# Write an HTML summary report:
-nextflow run main.nf -c user.config -with-report report.html
-
-# Draw the workflow DAG:
-nextflow run main.nf -c user.config -with-dag dag.svg
-```
-
-**Inspecting a failed run:**
-
-```sh
-# List all past runs:
-nextflow log
-
-# Show work directory, exit code, and status for the most recent run:
-nextflow log last -f name,status,exit,work_dir
-
-# Jump straight to the error output of any failed task:
-nextflow log last -f name,status,exit,work_dir | grep FAILED
-# then:
-cat work/xx/hash.../.command.log
-```
-
----
-
-## Outputs
-
-```
-results/
-├── assemblies/
-│   ├── bTaeGut7_v0.1.hap1.fa.gz  (+.fai, .gzi, .repetitive_k15.txt, BWA index files)   ← initial (from Verkko)
-│   ├── bTaeGut7_v0.1.hap2.fa.gz
-│   ├── bTaeGut7_v0.1.dip.fa.gz
-│   ├── bTaeGut7_v0.2.hap1.fa.gz  (+.fai, .gzi, .repetitive_k15.txt)              ← Round 1 polished
-│   ├── bTaeGut7_v0.2.hap2.fa.gz
-│   ├── bTaeGut7_v0.2.dip.fa.gz
-│   ├── bTaeGut7_v0.3.hap1.fa.gz  (+.fai, .gzi, .repetitive_k15.txt)              ← Round 2 polished
-│   ├── bTaeGut7_v0.3.hap2.fa.gz
-│   └── bTaeGut7_v0.3.dip.fa.gz
-├── mapping/
-│   ├── bTaeGut7_v0.1.hap1.hifi/
-│   │   ├── *.sort.bam                          (only with --keep_intermediates true)
-│   │   ├── bTaeGut7_v0.1.hap1.hifi.bam         (merged)
-│   │   ├── bTaeGut7_v0.1.hap1.hifi.pri.bam     (filtered: -F0x104)
-│   │   └── bTaeGut7_v0.1.hap1.hifi.pri.paf
-│   ├── bTaeGut7_v0.1.hap1.illumina/
-│   │   ├── *.dedup.pri.bam                     (only with --keep_intermediates true)
-│   │   └── bTaeGut7_v0.1.hap1.illumina.dedup.pri.bam
-│   ├── bTaeGut7_v0.1.hap1.hifi_illumina/
-│   │   └── bTaeGut7_v0.1.hap1.hifi_illumina.bam  (hybrid merged BAM for DV Track A)
-│   ├── bTaeGut7_v0.1.hap2.{hifi,ont,illumina,element,hifi_illumina}/
-│   │   └── (same structure)
-│   └── bTaeGut7_v0.1.dip.{hifi,ont,illumina,element,hifi_illumina}/
-│       └── (same structure)
-├── deepvariant/
-│   │
-│   │  Track A — Hybrid (all three haps)
-│   ├── bTaeGut7_v0.1.hap1.hifi_illumina.MQ5/   (hap1/hap2 → MQ 5)
-│   │   ├── examples/                            (make_examples output; always published)
-│   │   ├── dv_HYBRID_PACBIO_ILLUMINA_MQ5.hap1.vcf.gz   (+.tbi)
-│   │   └── dv_HYBRID_PACBIO_ILLUMINA_MQ5.hap1.gvcf.gz  (+.tbi)
-│   ├── bTaeGut7_v0.1.hap2.hifi_illumina.MQ5/
-│   │   └── (same structure)
-│   ├── bTaeGut7_v0.1.dip.hifi_illumina.MQ0/    (dip → MQ 0)
-│   │   ├── examples/
-│   │   ├── dv_HYBRID_PACBIO_ILLUMINA_MQ0.dip.vcf.gz    (+.tbi)
-│   │   └── dv_HYBRID_PACBIO_ILLUMINA_MQ0.dip.gvcf.gz   (+.tbi)
-│   │
-│   │  Track B — ONT, dip only
-│   │  R10 (default):
-│   ├── bTaeGut7_v0.1.dip.ont.MQ0/
-│   │   ├── examples/
-│   │   ├── dv_ONT_R104_MQ0.dip.vcf.gz   (+.tbi)
-│   │   └── dv_ONT_R104_MQ0.dip.gvcf.gz  (+.tbi)
-│   │  R9 (--ont_chemistry r9):
-│   └── bTaeGut7_v0.1.dip.ont.MQ0/
-│       └── dv_ONT_R9_MQ0.dip.vcf.gz     (+.tbi)   (no gVCF)
-└── snv_candidates/                  (disable with --run_snv_candidates false)
-    │
-    │  Round 1 outputs (ver_from=v0.1, ver_to=v0.2):
-    ├── v0.1_to_v0.2/
-    │   ├── snv_candidates.merfin-loose.vcf.gz (+.tbi)  — Merfin-validated SNV candidates
-    │   ├── v0.2.dip.fa.gz   (+.fai, .gzi)  — polished dip assembly
-    │   ├── v0.2.hap1.fa.gz  (+.fai, .gzi)  — hap1 extracted from polished dip
-    │   ├── v0.2.hap2.fa.gz  (+.fai, .gzi)  — hap2 extracted from polished dip
-    │   ├── v0.1_to_v0.2.dip.chain          — liftover chain (dip)
-    │   └── intermediates/                  — only with --keep_snv_intermediates true
-    │       ├── hybrid_to_dip.PASS.merfin-strict.vcf.gz (+.tbi)
-    │       ├── hybrid_to_dip.PASS.vcf.gz (+.tbi)
-    │       ├── hybrid_to_hap.PASS.vcf.gz (+.tbi)
-    │       ├── ont_to_dip.PASS.vcf.gz (+.tbi)
-    │       └── snv_pre_merfin.vcf.gz (+.tbi)
-    │
-    │  Round 2 outputs (ver_from=v0.2, ver_to=v0.3):
-    └── v0.2_to_v0.3/
-        ├── snv_candidates.merfin-loose.vcf.gz (+.tbi)
-        ├── v0.3.dip.fa.gz   (+.fai, .gzi)
-        ├── v0.3.hap1.fa.gz  (+.fai, .gzi)
-        ├── v0.3.hap2.fa.gz  (+.fai, .gzi)
-        ├── v0.2_to_v0.3.dip.chain
-        └── intermediates/                  — only with --keep_snv_intermediates true
-    (additional rounds follow the same pattern: v0.3_to_v0.4/, etc.)
-```
-
----
-
-## Notes
-
-- **No external submit scripts required.** The original `winnowmap/_submit.sh` and `bwa/_submit_bwa.sh` are fully replaced by native Nextflow processes. Slurm job dependencies, array logic, and `--gres=lscratch` are all handled via `resources.config` resource labels.
-- **`-resume` is safe.** Nextflow caches each process by its inputs. Re-running with `-resume` skips any already-completed step, equivalent to the `if [[ -s $out.bam ]]` guards in the original scripts.
-- **`module load` calls** inside process scripts rely on the Biowulf (NIH HPC) module system. Adjust them if running on a different cluster.
-- **Cluster portability.** Copy `resources.config`, change `executor`, queue names, and `clusterOptions` to suit your scheduler, then load your copy via `includeConfig` in `user.config` or with `-c my_resources.config` on the command line.
-- **DeepVariant always runs.** The hybrid-merge + variant-calling sub-workflow fires automatically once the relevant BAMs for each haplotype are ready. No flag is needed to enable it.
-- **Two parallel DV tracks.** The pipeline runs two independent tracks simultaneously: (A) hybrid HiFi + short-read calling on all three haps, and (B) ONT-only calling on the dip reference.
-- **Multiple short-read platforms.** When both `illumina` and `element` are in `--platforms`, `MERGE_HYBRID` merges all active short-read BAMs together with the HiFi BAM into a single hybrid BAM before calling variants — so DeepVariant still produces exactly one VCF per haplotype regardless of how many short-read platforms were used. The merged BAM combo tag (e.g. `HYBRID_PACBIO_ILLUMINA_ELEMENT`) is reflected in the output directory name but does not affect downstream processing.
-- **ONT chemistry selection.** Track B uses DeepVariant's `ONT_R104` model by default (`--ont_chemistry r10`). For R9 data set `--ont_chemistry r9`, which switches to PEPPER-Margin-DeepVariant (module `pepper_deepvariant/0.8`) with a per-chromosome GPU scatter. **If you have mixed R9 and R10 data, use `--ont_chemistry r10`** — the R10 model is preferred, it runs as a single pipeline step, and it produces a gVCF. R9 mode does not emit a gVCF.
-- **Per-hap MQ thresholds.** DeepVariant applies MQ 5 to hap1/hap2 and MQ 0 to dip — stricter for haplotypes, permissive for the diploid reference where multi-mapper signal is informative. Override with `--dv_mq_hap` and `--dv_mq_dip` respectively.
-- **Assembly naming.** Set `params.asm_name` to your assembly prefix (e.g. `bTaeGut7`) and `params.asm_ver` to the starting version tag (e.g. `v0.1`). All output paths use `{asm_name}_{asm_ver}` as a prefix. Polished assemblies are written with auto-incremented version tags (`v0.2`, `v0.3`, …).
-- **SNV candidates always run.** Pass `--run_snv_candidates false` to skip the SNV candidate collection sub-workflow. When enabled (the default), requires `params.hybrid_meryl` (path to a pre-built hybrid read k-mer meryl DB, e.g. `hybrid.k31.meryl`) and `params.merfin_peak` (integer peak coverage from `meryl histogram` / GenomeScope).
-- **Two Merfin resource tiers.** The bcftools reheader / filter / isec steps (`SNV_FILTER_INTERSECT`) run on a 12 CPU / 12 GB node. Both Merfin runs (`-strict` on the hybrid→dip VCF and `-loose` on the final candidate set) run on a 12 CPU / 120 GB node (`norm_snv_merfin`) — the meryl k-mer DB lookup is the memory bottleneck. Adjust these labels in `resources.config` for your cluster.
-- **SNV candidate pipeline mirrors `variant_call/snv_candidates.sh`.** The bcftools logic is identical to the original script: reheader → PASS filter → hap concat → isec consensus errors → GT/GQ/AF filters → merfin-strict → final concat → GT→1/1 → merfin-loose. The only difference is that the seqmer `meryl count k=31` step is folded into the `SNV_MERFIN` process so it shares the same high-memory allocation as the k-mer lookups.
-- **SNV consensus is applied to dip only.** `SNV_APPLY_CONSENSUS` applies the merfin-loose VCF to the dip reference with `bcftools consensus -H 1`, producing a single polished `<ver_to>.dip.fa`. hap1 and hap2 are then extracted from the polished dip in `PREPARE_NEXT_ROUND` using `samtools faidx -r <names>` — where the sequence names come from the current-round hap1/hap2 FAI files. This means MT, EBV, rDNA, and any other shared sequences appear exactly once in the dip and are distributed correctly to each haplotype without duplication.
-- **Multi-round polishing.** After each round `PREPARE_NEXT_ROUND` produces `[hap, fa, fai]` for hap1, hap2, and dip, which feed directly into `BUILD_REFS_FROM_FILES` → `MAPPING` → `DEEPVARIANT` → `SNV_CANDIDATES` for round N+1. Version tags are auto-bumped each round (`v0.1 → v0.2 → v0.3`, etc.). Set `params.polish_rounds` (default `2`) to control how many rounds run; the valid range is 1–5.
-- **ONT DV VCF feeds SNV candidates.** The `ont_to_dip` VCF (from Track B) is used by `SNV_CANDIDATES` to corroborate hap-het sites with ONT homozygous support. If Track B produced no VCF, the `ont_dip_vcf` sub-channel will be empty and SNV candidates will silently skip. `PEPPER_MARGIN_DV` (R9 mode) requests four K80 GPUs per chromosome (`--gres=gpu:k80:4`). Adjust the `norm_dv_call_variants` and `norm_pepper_margin_dv` labels in `resources.config` for your cluster's GPU partition.
-- **call_variants retry.** The original `step2_with_minqual.sh` had an explicit retry loop for zero-size GPU output files. This is replaced by `maxRetries = 1` on the `norm_dv_call_variants` label in `resources.config` — Nextflow will automatically re-submit the job once if the task exits with a non-zero code.
-- **Paired-end globs** for `read_glob_illumina` and `read_glob_element` must be compatible with Nextflow's `Channel.fromFilePairs()`, i.e. contain a `{1,2}` or `R{1,2}` wildcard so R1 and R2 are grouped together. At least one of the two must be set when `illumina` or `element` appears in `--platforms` or `--dv_short_platforms` — the pipeline will error at startup if neither is provided. To run without any short-read data, exclude both with `--platforms hifi,ont --dv_short_platforms ''`.
-- **Startup validation.** The pipeline checks three conditions before submitting any jobs and errors immediately if any fail: (1) `hifi` must be in `--platforms` and `params.read_glob_hifi` must be set; (2) `ont` must be in `--platforms` and `params.read_glob_ont` must be set; (3) when `illumina` or `element` is active (via `--platforms` or `--dv_short_platforms`), at least one of `read_glob_illumina` / `read_glob_element` must be non-null.
-
----
 
 ## Disk space
 
@@ -601,11 +500,11 @@ Nextflow writes **two separate copies** of every output file:
 | `work/<hash>/` | Canonical task outputs; source of truth for the cache | ✅ yes |
 | `results/` (publishDir) | Human-readable final outputs; hard-links or copies from `work/` | ❌ no |
 
-`results/` is a **one-way publication sink**.  Nextflow never reads it back.
-On `-resume`, the cache is checked against `work/` only — so if `work/` is
-deleted, every task re-runs from scratch even if `results/` is fully intact.
+`results/` is a **one-way publication sink**.  Nextflow never reads it back by default.
+On `-resume`, the cache is checked against `work/` only unless [re-entry is attempted](### 5. Re-enter from existing results).
+If `work/` is deleted, every task re-runs from scratch even if `results/` is fully intact.
 
-### Intermediate BAMs and `work/`
+### Intermediates and `work/`
 
 Per-read `*.sort.bam` (Winnowmap) and per-pair `*.dedup.pri.bam` (BWA) files
 are always written to `work/` — the `--keep_intermediates` flag only controls
@@ -632,13 +531,13 @@ nextflow clean -n
 nextflow clean -n <run-name>
 ```
 
-> **Tip — selective cleaning with `-but-less-recent`:**
-> If you have a long run that you want to keep resumable but want to free
-> space from earlier failed attempts, use:
-> ```sh
-> nextflow clean -f -but-less-recent <run-name>
-> ```
-> This keeps the most recent run's `work/` intact and deletes all older ones.
+**Tip — selective cleaning with `-but-less-recent`:**
+If you have a long run that you want to keep resumable but want to free
+space from earlier failed attempts, use:
+```sh
+nextflow clean -f -but-less-recent <run-name>
+```
+This keeps the most recent run's `work/` intact and deletes all older ones.
 
 ### Recommended workflow for large assemblies
 
@@ -647,6 +546,3 @@ nextflow clean -n <run-name>
 3. Archive `results/` to long-term storage (e.g. `rsync` to a data store).
 4. Run `nextflow clean -f <run-name>` to delete `work/`.
 5. Delete intermediate BAMs from `results/` if they were published
-   (`--keep_intermediates true`) and are no longer needed.
-
-
