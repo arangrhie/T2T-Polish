@@ -54,7 +54,6 @@ params.ont_chemistry      = params.ont_chemistry      ?: 'r10'  // 'r10' or 'r9'
 params.dv_n_shard         = params.dv_n_shard         ?: 12
 params.dv_long_platforms  = params.dv_long_platforms  ?: 'hifi' // long-read platforms to use in hybrid merge
 params.dv_short_platforms = params.dv_short_platforms ?: 'illumina,element' // short-read platforms
-params.keep_dv_intermediates = params.keep_dv_intermediates ?: false
 
 // SNV candidates / polishing parameters
 // Disable with --run_snv_candidates false (and run_dv_ont = true for the ONT track).
@@ -140,12 +139,15 @@ workflow {
     if ( !_refs_provided ) {
         requireParam('hap1_fasta_gz',          params.hap1_fasta_gz)
         requireParam('hap2_fasta_gz',          params.hap2_fasta_gz)
-        requireParam('mito_exemplar_fasta_gz', params.mito_exemplar_fasta_gz)
     }
 
     def rounds = (params.polish_rounds as int)
     if ( rounds < 1 ) error "params.polish_rounds must be ≥ 1 (got ${params.polish_rounds})"
     if ( rounds > 5 ) error "params.polish_rounds > 5 is not supported (got ${params.polish_rounds})"
+    if ( ! params.run_dv ) {
+        log.warn "DeepVariant stages are disabled (--run_dv false); overriding params.polish_rounds to 1."
+        rounds = 1
+    }
 
     def ver = []
     ver[0] = params.asm_ver ?: 'v0.1'
@@ -266,52 +268,57 @@ workflow {
         r1_bwa_bams = MAPPING_R1.out.bwa_mrg_bams
     }
 
-    DEEPVARIANT_R1( r1_dv_refs, r1_wm_bams, r1_bwa_bams )
+    if ( params.run_dv ) {
 
-    if ( params.run_snv_candidates ) {
-        requireParam('hybrid_meryl', params.hybrid_meryl)
-        requireParam('merfin_peak',  params.merfin_peak)
+        DEEPVARIANT_R1( r1_dv_refs, r1_wm_bams, r1_bwa_bams )
 
-        SNV_CANDIDATES_R1( DEEPVARIANT_R1.out.dv_vcfs, r1_refs, ver[0], ver[1] )
-    }
+        if ( params.run_snv_candidates ) {
+            requireParam('hybrid_meryl', params.hybrid_meryl)
+            requireParam('merfin_peak',  params.merfin_peak)
 
-    // ---- Round 2 ------------------------------------------------------------
-    if ( rounds >= 2 && params.run_snv_candidates ) {
-        BUILD_REFS_R2( SNV_CANDIDATES_R1.out.next_refs, ver[1] )
-        def r2_refs = BUILD_REFS_R2.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+            SNV_CANDIDATES_R1( DEEPVARIANT_R1.out.dv_vcfs, r1_refs, ver[0], ver[1] )
+        }
 
-        MAPPING_R2( BUILD_REFS_R2.out.wm_refs, BUILD_REFS_R2.out.bwa_refs )
-        DEEPVARIANT_R2( BUILD_REFS_R2.out.dv_refs, MAPPING_R2.out.wm_pri_bams, MAPPING_R2.out.bwa_mrg_bams )
-        SNV_CANDIDATES_R2( DEEPVARIANT_R2.out.dv_vcfs, r2_refs, ver[1], ver[2] )
-    }
+        // ---- Round 2 ------------------------------------------------------------
+        if ( rounds >= 2 && params.run_snv_candidates ) {
+            BUILD_REFS_R2( SNV_CANDIDATES_R1.out.next_refs, ver[1] )
+            def r2_refs = BUILD_REFS_R2.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
 
-    // ---- Round 3 ------------------------------------------------------------
-    if ( rounds >= 3 && params.run_snv_candidates ) {
-        BUILD_REFS_R3( SNV_CANDIDATES_R2.out.next_refs, ver[2] )
-        def r3_refs = BUILD_REFS_R3.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+            MAPPING_R2( BUILD_REFS_R2.out.wm_refs, BUILD_REFS_R2.out.bwa_refs )
+            DEEPVARIANT_R2( BUILD_REFS_R2.out.dv_refs, MAPPING_R2.out.wm_pri_bams, MAPPING_R2.out.bwa_mrg_bams )
+            SNV_CANDIDATES_R2( DEEPVARIANT_R2.out.dv_vcfs, r2_refs, ver[1], ver[2] )
+        }
 
-        MAPPING_R3( BUILD_REFS_R3.out.wm_refs, BUILD_REFS_R3.out.bwa_refs )
-        DEEPVARIANT_R3( BUILD_REFS_R3.out.dv_refs, MAPPING_R3.out.wm_pri_bams, MAPPING_R3.out.bwa_mrg_bams )
-        SNV_CANDIDATES_R3( DEEPVARIANT_R3.out.dv_vcfs, r3_refs, ver[2], ver[3] )
-    }
+        // ---- Round 3 ------------------------------------------------------------
+        if ( rounds >= 3 && params.run_snv_candidates ) {
+            BUILD_REFS_R3( SNV_CANDIDATES_R2.out.next_refs, ver[2] )
+            def r3_refs = BUILD_REFS_R3.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
 
-    // ---- Round 4 ------------------------------------------------------------
-    if ( rounds >= 4 && params.run_snv_candidates ) {
-        BUILD_REFS_R4( SNV_CANDIDATES_R3.out.next_refs, ver[3] )
-        def r4_refs = BUILD_REFS_R4.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+            MAPPING_R3( BUILD_REFS_R3.out.wm_refs, BUILD_REFS_R3.out.bwa_refs )
+            DEEPVARIANT_R3( BUILD_REFS_R3.out.dv_refs, MAPPING_R3.out.wm_pri_bams, MAPPING_R3.out.bwa_mrg_bams )
+            SNV_CANDIDATES_R3( DEEPVARIANT_R3.out.dv_vcfs, r3_refs, ver[2], ver[3] )
+        }
 
-        MAPPING_R4( BUILD_REFS_R4.out.wm_refs, BUILD_REFS_R4.out.bwa_refs )
-        DEEPVARIANT_R4( BUILD_REFS_R4.out.dv_refs, MAPPING_R4.out.wm_pri_bams, MAPPING_R4.out.bwa_mrg_bams )
-        SNV_CANDIDATES_R4( DEEPVARIANT_R4.out.dv_vcfs, r4_refs, ver[3], ver[4] )
-    }
+        // ---- Round 4 ------------------------------------------------------------
+        if ( rounds >= 4 && params.run_snv_candidates ) {
+            BUILD_REFS_R4( SNV_CANDIDATES_R3.out.next_refs, ver[3] )
+            def r4_refs = BUILD_REFS_R4.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
 
-    // ---- Round 5 ------------------------------------------------------------
-    if ( rounds >= 5 && params.run_snv_candidates ) {
-        BUILD_REFS_R5( SNV_CANDIDATES_R4.out.next_refs, ver[4] )
-        def r5_refs = BUILD_REFS_R5.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+            MAPPING_R4( BUILD_REFS_R4.out.wm_refs, BUILD_REFS_R4.out.bwa_refs )
+            DEEPVARIANT_R4( BUILD_REFS_R4.out.dv_refs, MAPPING_R4.out.wm_pri_bams, MAPPING_R4.out.bwa_mrg_bams )
+            SNV_CANDIDATES_R4( DEEPVARIANT_R4.out.dv_vcfs, r4_refs, ver[3], ver[4] )
+        }
 
-        MAPPING_R5( BUILD_REFS_R5.out.wm_refs, BUILD_REFS_R5.out.bwa_refs )
-        DEEPVARIANT_R5( BUILD_REFS_R5.out.dv_refs, MAPPING_R5.out.wm_pri_bams, MAPPING_R5.out.bwa_mrg_bams )
-        SNV_CANDIDATES_R5( DEEPVARIANT_R5.out.dv_vcfs, r5_refs, ver[4], ver[5] )
+        // ---- Round 5 ------------------------------------------------------------
+        if ( rounds >= 5 && params.run_snv_candidates ) {
+            BUILD_REFS_R5( SNV_CANDIDATES_R4.out.next_refs, ver[4] )
+            def r5_refs = BUILD_REFS_R5.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+
+            MAPPING_R5( BUILD_REFS_R5.out.wm_refs, BUILD_REFS_R5.out.bwa_refs )
+            DEEPVARIANT_R5( BUILD_REFS_R5.out.dv_refs, MAPPING_R5.out.wm_pri_bams, MAPPING_R5.out.bwa_mrg_bams )
+            SNV_CANDIDATES_R5( DEEPVARIANT_R5.out.dv_vcfs, r5_refs, ver[4], ver[5] )
+        }
+    } else {
+        log.info "Skipping DeepVariant and SNV candidate stages (--run_dv false)."
     }
 }
