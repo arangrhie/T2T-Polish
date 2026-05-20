@@ -15,11 +15,11 @@
 params {
   // Reference pieces. verkko_asm should have the assembly.*.fasta.gz files below.
   verkko_asm = '/data/Phillippy2/projects/hprc-test-r3/assemblies-r3/HG002_nor9/verkko-hi-c'
-  hap1_fasta_gz = "${params.verkko_asm}/assembly.haplotype1.fasta.gz"
-  hap2_fasta_gz = "${params.verkko_asm}/assembly.haplotype2.fasta.gz"
-  mito_exemplar_fasta_gz = "${params.verkko_asm}/assembly.mito.exemplar.fasta.gz"
-  ebv_fasta_gz  = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional — remove or comment out if absent
+  hap1_fasta_gz = "${params.verkko_asm}/assembly.haplotype1.fasta.gz" // or pri for evaluation (ex. primary + sex chromosomes + MT + EBV)
+  hap2_fasta_gz = "${params.verkko_asm}/assembly.haplotype2.fasta.gz" // or alt for evaluation (ex. alternate + unassigned + unloc + rDNA_morphs)
+  mito_exemplar_fasta_gz = "${params.verkko_asm}/assembly.mito.exemplar.fasta.gz" // optional
   rdna_exemplar_fasta_gz = "${params.verkko_asm}/assembly.rdna.exemplar.fasta.gz" // optional
+  ebv_fasta_gz  = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional
 
   // Reads (globs)
   read_glob_hifi     = '/data/Phillippy/seq/hpgp/HG002/pacbio/CCS/Revio_HiFi_DCv1.2_24hr_PacBio_2024May/*.fastq.gz'
@@ -66,13 +66,13 @@ params {
   k8 = "${params.tools}/k8/k8"
 
 
-  // SNV candidates / Merfin polishing.
-  // Required when run_snv_candidates = true (the default).
-  //
+  // Skip DeepVariant and the following SNV candidates / Merfin polishing by setting
+  // run_dv = false
+
   // hybrid_meryl: path to a Meryl k-mer database built from the hybrid reads
   //   (e.g. HiFi + Illumina) used to evaluate variant candidates with Merfin.
   //   Build with: meryl union-sum output hybrid.meryl hifi.meryl illumina.meryl
-  hybrid_meryl = '/data/Phillippy/projects/hprc-test-r3/HG002/meryl/hybrid.meryl'
+  hybrid_meryl = '/path/to/meryl/hybrid.meryl'
   //
   // merfin_peak: integer peak k-mer coverage of the hybrid_meryl database.
   //   Merfin uses this to compute lookup values.  Estimate from a GenomeScope2

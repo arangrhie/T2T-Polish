@@ -75,6 +75,7 @@ process BUILD_DIP_REFERENCE {
 
     script:
     def out      = "${params.asm_name}_${params.asm_ver}.dip.fa.gz"
+    def mito_arg  = mito.toString().contains('NO_FILE_') ? '' : "${mito}"
     def ebv_arg  = ebv.toString().contains('NO_FILE_') ? '' : "${ebv}"
     def rdna_arg = rdna.toString().contains('NO_FILE_') ? '' : "${rdna}"
     def cpus     = task.cpus
@@ -83,7 +84,7 @@ process BUILD_DIP_REFERENCE {
     module load samtools || true
 
     # cat if already bgzipped, otherwise compress on the fly
-    { for f in ${h1} ${h2} ${mito} ${ebv_arg} ${rdna_arg}; do
+    { for f in ${h1} ${h2} ${mito_arg} ${ebv_arg} ${rdna_arg}; do
           case "\$f" in *.gz|*.bgz) cat "\$f" ;; *) bgzip -@${cpus} -c "\$f" ;; esac
       done; } > ${out}
     bgzip --reindex -@${cpus} ${out}
