@@ -262,8 +262,7 @@ process PEPPER_MARGIN_DV {
     tag "${hap}:${region}:MQ${mq}"
     // Per-chromosome output dirs are named dv_ONT_R9_MQ{mq}_{region}/
     publishDir "${params.dv_outdir}/${params.asm_ver}.${hap}.ont.MQ${mq}",
-               mode: 'link', overwrite: true,
-               enabled: params.keep_dv_intermediates
+               mode: 'link', overwrite: true
 
     errorStrategy 'ignore'
     input:
