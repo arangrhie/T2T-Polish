@@ -30,6 +30,7 @@ process BUILD_HAP_REFERENCES {
 
     script:
     def out      = "${params.asm_name}_${params.asm_ver}.${hap}.fa.gz"
+    def mito_arg  = mito.toString().contains('NO_FILE_') ? '' : "${mito}"
     def ebv_arg  = ebv.toString().contains('NO_FILE_') ? '' : "${ebv}"
     def rdna_arg = rdna.toString().contains('NO_FILE_') ? '' : "${rdna}"
     def cpus     = task.cpus
@@ -38,7 +39,7 @@ process BUILD_HAP_REFERENCES {
     module load samtools || true
 
     # cat if already bgzipped, otherwise compress on the fly
-    { for f in ${hap_fa} ${mito} ${ebv_arg} ${rdna_arg}; do
+    { for f in ${hap_fa} ${mito_arg} ${ebv_arg} ${rdna_arg}; do
           case "\$f" in *.gz|*.bgz) cat "\$f" ;; *) bgzip -@${cpus} -c "\$f" ;; esac
       done; } > ${out}
     bgzip --reindex -@${cpus} ${out}
@@ -53,7 +54,7 @@ process BUILD_HAP_REFERENCES {
 }
 
 /*
- * Concatenate hap1 + hap2 + mito + [ebv] + [rdna] into the dip reference and index it.
+ * Concatenate hap1 + hap2 + [mito] + [ebv] + [rdna] into the dip reference and index it.
  * Replaces the former two-step MAKE_DIP_HAPS → BUILD_HAP_REFERENCES(dip) chain.
  */
 process BUILD_DIP_REFERENCE {
