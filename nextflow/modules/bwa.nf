@@ -16,7 +16,8 @@
 process BWA_INDEX {
     label 'quick_small'
     tag "${hap}"
-    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: true
+    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: false,
+               saveAs: { fn -> fn == ref_fa_gz.name || fn == ref_fai.name ? null : fn }
 
     input:
     tuple val(hap), val(ver_from), path(ref_fa_gz), path(ref_fai)
