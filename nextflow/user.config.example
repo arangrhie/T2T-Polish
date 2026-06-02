@@ -22,6 +22,7 @@ params {
   ebv_fasta_gz  = "${params.verkko_asm}/assembly.ebv.fasta.gz"  // optional
 
   // Reads (globs)
+  platforms          = 'hifi,ont,illumina' // replace illumina with element if that's the only source
   read_glob_hifi     = '/data/Phillippy/seq/hpgp/HG002/pacbio/CCS/Revio_HiFi_DCv1.2_24hr_PacBio_2024May/*.fastq.gz'
   read_glob_ont      = '/data/Phillippy/seq/hpgp/HG002/nanopore/R10.4.1_dorado_v0.3.4/data/*.fq.gz'
 
