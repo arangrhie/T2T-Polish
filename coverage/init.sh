@@ -11,8 +11,12 @@ fi
 asm=$1
 name=$2
 
-if [[ "$asm" == "*\.gz" ]]; then
+if [[ "$asm" == *.gz ]]; then
+  echo "Unzip"
   pigz -dc $asm > $name.fa
+
+  module load samtools
+  samtools faidx -@12 $name.fa
 elif [[ ! -s $name.fa ]]; then
   ln -sf $asm     $name.fa
   ln -sf $asm.fai $name.fa.fai
