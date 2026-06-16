@@ -41,17 +41,17 @@ params {
   // Use LITERAL paths here; params.mapping_outdir / params.dv_outdir cannot be
   // referenced across config files and will cause "Unknown config attribute" errors.
   // Leave commented out (null) to run all stages from scratch.
-  //
+  
   // Pre-built reference FA.GZ files — skips BUILD_HAP_REFERENCES + BUILD_DIP_REFERENCE.
   // Point to the assemblies/ output directory; filenames are inferred as
   //   {asm_name}_{asm_ver}.{hap1,hap2,dip}.fa.gz  (+.gzi and .fai must exist alongside).
   // assemblies_dir = '/path/to/results/assemblies'
-  //
+  
   // Pre-built BAMs — skips WM mapping, BWA mapping, and MERGE_HYBRID (per hap).
   // Point to the mapping/ output directory; WM pri BAMs, BWA BAMs, and hybrid
   // merged BAMs are discovered automatically using the {asm_name}_{asm_ver} prefix.
   // mapping_dir = '/path/to/results/mapping'
-  //
+  
   // Pre-built DV examples — skips make_examples (step 1, per hap/combo).
   // Point to the deepvariant/ output directory; examples/ dirs are discovered
   // automatically using the {asm_name}_{asm_ver} prefix.
@@ -74,7 +74,7 @@ params {
   //   (e.g. HiFi + Illumina) used to evaluate variant candidates with Merfin.
   //   Build with: meryl union-sum output hybrid.meryl hifi.meryl illumina.meryl
   hybrid_meryl = '/path/to/meryl/hybrid.meryl'
-  //
+  
   // merfin_peak: integer peak k-mer coverage of the hybrid_meryl database.
   //   Merfin uses this to compute lookup values.  Estimate from a GenomeScope2
   //   or Smudgeplots analysis of the same read set, or from the Meryl histogram.
