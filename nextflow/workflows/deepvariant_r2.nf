@@ -53,10 +53,10 @@ workflow DEEPVARIANT_R2 {
     def r9_input = ( params.ont_chemistry == 'r9' )
         ? ont_dip_with_ref.flatMap { hap, ver, plat, bam, bai, ref, gzi, fai ->
               fai.text.readLines().collect { line -> line.split('\t')[0] }
-                  .collect { region -> tuple(hap, region, params.dv_mq_dip.toInteger(), ref, gzi, fai, bam, bai) } }
+                  .collect { region -> tuple(hap, ver, region, params.dv_mq_dip.toInteger(), ref, gzi, fai, bam, bai) } }
         : Channel.empty()
-    def per_chr = PEPPER_MARGIN_DV_R2(r9_input)
-    DV_MERGE_CHR_VCFS_R2( per_chr.groupTuple(by: [0, 1]) )
+    PEPPER_MARGIN_DV_R2(r9_input)
+    def r9_merged = DV_MERGE_CHR_VCFS_R2( PEPPER_MARGIN_DV_R2.out.vcfs.groupTuple(by: [0, 1, 2]) )
 
     // R10 path — input channel is empty when ont_chemistry == 'r9'
     def ont_input = ( params.ont_chemistry != 'r9' )
@@ -74,7 +74,9 @@ workflow DEEPVARIANT_R2 {
                    tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
     )
 
-    def dv_vcfs_ch = DV_POSTPROCESS_HYB_R2.out[0].mix( DV_POSTPROCESS_ONT_R2.out[0] )
+    def dv_vcfs_ch = DV_POSTPROCESS_HYB_R2.out[0]
+        .mix( DV_POSTPROCESS_ONT_R2.out[0] )
+        .mix( r9_merged )
 
     emit:
     dv_vcfs = dv_vcfs_ch

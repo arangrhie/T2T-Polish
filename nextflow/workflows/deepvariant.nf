@@ -116,8 +116,14 @@ workflow DEEPVARIANT {
                      }
         // [ 'dip', region, mq, ref_fa_gz, ref_fai, bam, bai ]
 
-        def per_chr_vcfs = PEPPER_MARGIN_DV(ont_r9_input)
+        def pepper_r9 = PEPPER_MARGIN_DV(ont_r9_input)
+        def per_chr_vcfs = pepper_r9.out.vcfs
         // [ 'dip', mq, vcf.gz, vcf.gz.tbi ]  — one item per chromosome
+
+        pepper_r9.out.status
+            .map { it.text.trim() }
+            .filter { it }
+            .view { msg -> "[PEPPER_MARGIN_DV] ${msg}" }
 
         def merged_vcf_input = per_chr_vcfs
             .groupTuple(by: [0, 1])

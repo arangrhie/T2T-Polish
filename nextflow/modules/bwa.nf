@@ -114,7 +114,7 @@ process BWA_MERGE {
     label 'norm_merge_bwa'
     tag "${hap}:${ver_from}:${platform}"
     publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}",
-                mode: 'link', overwrite: true
+                mode: 'link', overwrite: false
 
     input:
     tuple val(hap), val(ver_from), val(platform), path(bams), path(csis)

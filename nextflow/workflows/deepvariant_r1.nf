@@ -73,10 +73,10 @@ workflow DEEPVARIANT_R1 {
     def r9_input = ( params.ont_chemistry == 'r9' )
         ? ont_dip_with_ref.flatMap { hap, ver, plat, bam, bai, ref, gzi, fai ->
               fai.text.readLines().collect { line -> line.split('\t')[0] }
-                  .collect { region -> tuple(hap, region, params.dv_mq_dip.toInteger(), ref, gzi, fai, bam, bai) } }
+                  .collect { region -> tuple(hap, ver, region, params.dv_mq_dip.toInteger(), ref, gzi, fai, bam, bai) } }
         : Channel.empty()
-    def per_chr = PEPPER_MARGIN_DV_R1(r9_input)
-    DV_MERGE_CHR_VCFS_R1( per_chr.groupTuple(by: [0, 1]) )
+    PEPPER_MARGIN_DV_R1(r9_input)
+    def r9_merged = DV_MERGE_CHR_VCFS_R1( PEPPER_MARGIN_DV_R1.out.vcfs.groupTuple(by: [0, 1, 2]) )
 
     // R10 input — defined here so it's in scope for the examples re-entry block below
     def ont_input = ( params.ont_chemistry != 'r9' )
@@ -198,18 +198,71 @@ workflow DEEPVARIANT_R1 {
             .map { hap,ver,combo,mode,mq,ref,gzi,fai,bam,bai,examples_dir ->
                    tuple(hap,ver,combo,mode,mq,ref,gzi,fai,examples_dir) }
     }
-    DV_POSTPROCESS_HYB_R1(
-        hyb_calls.join(hyb_exref, by:[0,1,2,3,4])
-            .map { hap,ver,combo,mode,mq,cvo,ref,gzi,fai,examples_dir ->
-                   tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
-    )
-    DV_POSTPROCESS_ONT_R1(
-        ont_calls.join(ont_exref, by:[0,1,2,3,4])
-            .map { hap,ver,combo,mode,mq,cvo,ref,gzi,fai,examples_dir ->
-                   tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
-    )
 
-    def dv_vcfs_ch = DV_POSTPROCESS_HYB_R1.out[0].mix( DV_POSTPROCESS_ONT_R1.out[0] )
+    // ---- DV step 3: postprocess — with per-item re-entry on completed VCFs ----
+    // If deepvariant_dir is set, scan for already-produced VCFs (vcf + tbi + gvcf + gvcf.tbi)
+    // and skip DV_POSTPROCESS for those hap/combo/mq items.
+    def hyb_post_input = hyb_calls.join(hyb_exref, by:[0,1,2,3,4])
+        .map { hap,ver,combo,mode,mq,cvo,ref,gzi,fai,examples_dir ->
+               tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
+    def ont_post_input = ont_calls.join(ont_exref, by:[0,1,2,3,4])
+        .map { hap,ver,combo,mode,mq,cvo,ref,gzi,fai,examples_dir ->
+               tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
+
+    def hyb_post_existing
+    def ont_post_existing
+    if ( params.deepvariant_dir ) {
+        def dvdir = params.deepvariant_dir.replaceAll('/$', '')
+        def _pfx  = "${params.asm_name}_${params.asm_ver}"
+        // Parent dir: {asm_name}_{ver}.{hap}.{combo}.MQ{mq}
+        // VCF file:   dv_{mode}_MQ{mq}.{hap}.vcf.gz  (mode ∈ {HYBRID_PACBIO_ILLUMINA, ONT_R104})
+        def vcf_ch = Channel.fromPath("${dvdir}/${_pfx}.*.*.MQ*/dv_*_MQ*.*.vcf.gz")
+            .filter { f -> !f.name.contains('.gvcf.') }
+            .map { f ->
+                def pm = f.parent.name =~ /\.([^.]+)\.([^.]+)\.MQ(\d+)$/
+                def fm = f.name =~ /^dv_(.+)_MQ\d+\.[^.]+\.vcf\.gz$/
+                if (!pm || !fm) error "deepvariant_dir: cannot parse VCF path: ${f}"
+                def hap   = pm[0][1]
+                def combo = pm[0][2]
+                def mq    = pm[0][3].toInteger()
+                def mode  = fm[0][1]
+                def base  = "${f.parent}/dv_${mode}_MQ${mq}.${hap}"
+                def vcf   = file("${base}.vcf.gz")
+                def tbi   = file("${base}.vcf.gz.tbi")
+                def gvcf  = file("${base}.gvcf.gz")
+                def gtbi  = file("${base}.gvcf.gz.tbi")
+                tuple(hap, params.asm_ver, combo, mode, mq, vcf, tbi, gvcf, gtbi)
+            }
+            .filter { hap,ver,combo,mode,mq,vcf,tbi,gvcf,gtbi ->
+                      tbi.exists() && gvcf.exists() && gtbi.exists() }
+        hyb_post_existing = vcf_ch.filter { it[3] == 'HYBRID_PACBIO_ILLUMINA' }
+        ont_post_existing = vcf_ch.filter { it[3] == 'ONT_R104' }
+    } else {
+        hyb_post_existing = Channel.empty()
+        ont_post_existing = Channel.empty()
+    }
+
+    def hyb_post_missing = hyb_post_input
+        .join(hyb_post_existing.map { hap,ver,combo,mode,mq,vcf,tbi,gvcf,gtbi -> tuple(hap,ver,combo,mode,mq) },
+              by:[0,1,2,3,4], remainder: true)
+        .filter { it.last() == null }
+        .map    { hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir,_null ->
+                  tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
+    def ont_post_missing = ont_post_input
+        .join(ont_post_existing.map { hap,ver,combo,mode,mq,vcf,tbi,gvcf,gtbi -> tuple(hap,ver,combo,mode,mq) },
+              by:[0,1,2,3,4], remainder: true)
+        .filter { it.last() == null }
+        .map    { hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir,_null ->
+                  tuple(hap,ver,combo,mode,mq,ref,gzi,fai,cvo,examples_dir) }
+
+    DV_POSTPROCESS_HYB_R1(hyb_post_missing)
+    DV_POSTPROCESS_ONT_R1(ont_post_missing)
+
+    def dv_vcfs_ch = hyb_post_existing
+        .mix( DV_POSTPROCESS_HYB_R1.out[0] )
+        .mix( ont_post_existing )
+        .mix( DV_POSTPROCESS_ONT_R1.out[0] )
+        .mix( r9_merged )
 
     emit:
     dv_vcfs = dv_vcfs_ch

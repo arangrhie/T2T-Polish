@@ -12,7 +12,7 @@
  * Used for hap1 and hap2.
  */
 process BUILD_HAP_REFERENCES {
-    label 'norm_build_ref'
+    label 'build_ref'
     tag "${hap}:${params.asm_ver}"
     publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: true
 
@@ -58,9 +58,9 @@ process BUILD_HAP_REFERENCES {
  * Replaces the former two-step MAKE_DIP_HAPS → BUILD_HAP_REFERENCES(dip) chain.
  */
 process BUILD_DIP_REFERENCE {
-    label 'norm_build_ref'
+    label 'build_ref'
     tag "dip:${params.asm_ver}.dip"
-    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: true
+    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: false
 
     input:
     path(h1,   stageAs: 'in_h1/*')

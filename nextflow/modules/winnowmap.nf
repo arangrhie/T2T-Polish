@@ -18,7 +18,8 @@
 process MERYL_REPETITIVE {
     label 'quick_meryl'
     tag "${hap}:${ver_from}"
-    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: false
+    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: false,
+               saveAs: { fn -> fn == ref_fa_gz.name || fn == ref_fai.name ? null : fn }
 
     input:
     tuple val(hap), val(ver_from), path(ref_fa_gz), path(ref_fai)
@@ -65,33 +66,48 @@ process WINNOWMAP_MAP {
     output:
     tuple val(hap), val(ver_from), val(platform),
           path("${reads.simpleName}.sort.bam"),
-          path("${reads.simpleName}.sort.bam.bai")
+          path("${reads.simpleName}.sort.bam.csi")
 
     script:
-    def preset = (platform == 'hifi') ? 'map-pb' : 'map-ont'
-    def cpus   = task.cpus - 2      // leave 2 threads for samtools
-    def tmp    = '/lscratch/$SLURM_JOB_ID'
-    def out    = "${reads.simpleName}.sort"
+    def preset    = (platform == 'hifi') ? 'map-pb' : 'map-ont'
+    // Reserve 4 threads for the FASTQ header tag filter (2 each for
+    // samtools import + samtools fastq) and 2 for the sort pipeline.
+    def filt_cpus = 2
+    def win_cpus  = Math.max(1, (task.cpus as int) - (filt_cpus * 2))
+    def tmp       = '/lscratch/$SLURM_JOB_ID'
+    def out       = "${reads.simpleName}.sort"
+    // BAM inputs already carry valid SAM aux tags — skip samtools import
+    // and let samtools fastq -T re-emit only the allowlisted ones.
+    def ext     = reads.name.toLowerCase()
+    def is_bam  = ext.endsWith('.bam') || ext.endsWith('.cram')
+    def src_cmd   = is_bam
+        ? "${params.samtools} fastq -@${filt_cpus * 2} -T MM,ML,Mm,Ml ${reads}"
+        : "${params.samtools} import -@${filt_cpus} -T '*' ${reads} | ${params.samtools} fastq -@${filt_cpus} -T MM,ML,Mm,Ml"
     """
     set -euo pipefail
     module load winnowmap/2.03 || true
     module load samtools       || true
 
-    winnowmap --MD -W ${rep_txt} -ax ${preset} -I12g -t${cpus} -y \
-        ${ref_fa_gz} ${reads} > ${tmp}/${out}.sam
+    # Strip FASTQ header tokens that are not valid SAM aux tags before -y
+    # carries them over. samtools import parses only structurally valid
+    # tags; samtools fastq -T re-emits only the allowlisted ones.
+    winnowmap --MD -W ${rep_txt} -ax ${preset} -I12g -t${win_cpus} -y \
+        ${ref_fa_gz} \
+        <( ${src_cmd} ) \
+        > ${tmp}/${out}.sam
 
-    ${params.samtools} sort -@${cpus} -m2G \
+    ${params.samtools} sort -@${task.cpus} -m2G \
         -T ${tmp}/${out}.tmp -O bam \
-        -o ${tmp}/${out}.bam ${tmp}/${out}.sam
+        -o ${tmp}/${out}.bam \
+        --write-index ${tmp}/${out}.sam
     rm ${tmp}/${out}.sam
 
-    mv ${tmp}/${out}.bam ./
-    ${params.samtools} index -@${task.cpus} ${out}.bam
+    mv ${tmp}/${out}.bam* ./
     """
 
     stub:
     """
-    touch ${reads.simpleName}.sort.bam ${reads.simpleName}.sort.bam.bai
+    touch ${reads.simpleName}.sort.bam ${reads.simpleName}.sort.bam.csi
     """
 }
 
@@ -100,7 +116,7 @@ process WINNOWMAP_MAP {
  * Replaces winnowmap/merge.sh.
  */
 process WINNOWMAP_MERGE {
-    label 'norm_merge_wm'
+    label 'merge_wm'
     tag "${hap}:${ver_from}:${platform}"
     publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}", mode: 'link', overwrite: true
 
@@ -110,21 +126,20 @@ process WINNOWMAP_MERGE {
     output:
     tuple val(hap), val(ver_from), val(platform),
           path("${params.asm_name}_${ver_from}.${hap}.${platform}.bam"),
-          path("${params.asm_name}_${ver_from}.${hap}.${platform}.bam.bai")
+          path("${params.asm_name}_${ver_from}.${hap}.${platform}.bam.csi")
 
     script:
     def out = "${params.asm_name}_${ver_from}.${hap}.${platform}.bam"
     """
     set -euo pipefail
     module load samtools/1.21 || true
-    ${params.samtools} merge -O bam -@${task.cpus} ${out} ${bams}
-    ${params.samtools} index -@${task.cpus} ${out}
+    ${params.samtools} merge --write-index -O bam -@${task.cpus} ${out} ${bams}
     """
 
     stub:
     def out = "${params.asm_name}_${ver_from}.${hap}.${platform}.bam"
     """
-    touch ${out} ${out}.bai
+    touch ${out} ${out}.csi
     """
 }
 
@@ -133,7 +148,7 @@ process WINNOWMAP_MERGE {
  * Replaces filt.sh.
  */
 process WINNOWMAP_FILTER {
-    label 'norm_filter'
+    label 'filter_bam'
     tag "${hap}:${ver_from}:${platform}"
     publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}", mode: 'link', overwrite: true
 
@@ -150,8 +165,7 @@ process WINNOWMAP_FILTER {
     """
     set -euo pipefail
     module load samtools || true
-    ${params.samtools} view -F0x104 -@${task.cpus} -hb ${bam} > ${out}
-    ${params.samtools} index -@${task.cpus} ${out}
+    ${params.samtools} view -F0x104 -@${task.cpus} -hb --write-index -o ${out}##idx##${out}.bai ${bam}
     """
 
     stub:
@@ -166,7 +180,7 @@ process WINNOWMAP_FILTER {
  * Replaces coverage/sam2paf.sh.
  */
 process SAM2PAF {
-    label 'norm_filter'
+    label 'filter_bam'
     tag "${hap}:${ver_from}:${platform}"
     publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${platform}", mode: 'link', overwrite: true
 

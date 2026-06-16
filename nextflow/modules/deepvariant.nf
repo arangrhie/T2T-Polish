@@ -31,7 +31,7 @@
  * Replaces merge_hybrid.sh.
  */
 process MERGE_HYBRID {
-    label 'norm_merge_hybrid'
+    label 'merge_hybrid'
     tag "${hap}:${ver_from}:${long_plat}+${short_plat}"
     publishDir "${params.mapping_outdir}/${params.asm_name}_${ver_from}.${hap}.${long_plat}_${short_plat}",
                mode: 'link', overwrite: true
@@ -76,7 +76,7 @@ process MERGE_HYBRID {
  *   bai        — BAM index
  */
 process DV_MAKE_EXAMPLES {
-    label 'norm_dv_make_examples'
+    label 'dv_make_examples'
     tag "${hap}:${ver_from}:${combo}:MQ${minqual}"
     publishDir "${params.dv_outdir}/${params.asm_name}_${ver_from}.${hap}.${combo}.MQ${minqual}",
                mode: 'link', overwrite: true
@@ -146,7 +146,7 @@ process DV_MAKE_EXAMPLES {
  * now handled by Nextflow's built-in retry mechanism).
  */
 process DV_CALL_VARIANTS {
-    label 'norm_dv_call_variants'
+    label 'dv_call_variants'
     tag "${hap}:${ver_from}:${combo}:MQ${minqual}"
     // call_variants_output shards are always published — they are required by
     // DV_POSTPROCESS (step 3) and also serve as a re-entry checkpoint.
@@ -198,7 +198,7 @@ process DV_CALL_VARIANTS {
  * Emits the final VCF and gVCF pair.
  */
 process DV_POSTPROCESS {
-    label 'norm_dv_postprocess'
+    label 'dv_postprocess'
     tag "${hap}:${ver_from}:${combo}:MQ${minqual}"
     publishDir "${params.dv_outdir}/${params.asm_name}_${ver_from}.${hap}.${combo}.MQ${minqual}",
                mode: 'link', overwrite: true
@@ -247,9 +247,14 @@ process DV_POSTPROCESS {
  * ONT R9: run pepper_margin_deepvariant for a single chromosome region.
  * This process is scattered — one task per chromosome from the .fai.
  * Replaces ont_r9_pepper_margin_dv.sh.
+ * Note that pepper_margin_deepvariant is not able to parse out the region
+ * as expected when a - is in the sequence name.
+ * Instead, we are dumping a sub-bam and bai to avoid using -r.
+ * pepper_margin_deepvariant is also does not accept .csi indices.
  *
  * Inputs:
  *   hap       — haplotype tag (dip only for this process)
+ *   ver_from  — assembly version tag
  *   region    — chromosome / contig name (from ref.fai)
  *   mq        — min mapping quality (0 for dip)
  *   ref_fa_gz — reference FASTA (.gz, with .fai alongside)
@@ -258,23 +263,26 @@ process DV_POSTPROCESS {
  *   bai       — BAM index
  */
 process PEPPER_MARGIN_DV {
-    label 'norm_pepper_margin_dv'
+    label 'dv_pepper_margin'
     tag "${hap}:${region}:MQ${mq}"
     // Per-chromosome output dirs are named dv_ONT_R9_MQ{mq}_{region}/
-    publishDir "${params.dv_outdir}/${params.asm_ver}.${hap}.ont.MQ${mq}",
+    publishDir "${params.dv_outdir}/${params.asm_name}.${hap}.ont.MQ${mq}/region",
                mode: 'link', overwrite: true
 
-    errorStrategy 'ignore'
     input:
-    tuple val(hap), val(region), val(mq),
+    tuple val(hap), val(ver_from), val(region), val(mq),
           path(ref_fa_gz), path(ref_gzi), path(ref_fai),
           path(bam), path(bai)
 
     output:
-    tuple val(hap), val(mq),
-          path("dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz"),
-          path("dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz.tbi"),
-          optional: true
+    tuple val(hap), val(ver_from), val(mq),
+          path("dv_ONT_R9_MQ${mq}_${region}/dv_ONT_R9_MQ${mq}_${region}.vcf.gz"),
+          path("dv_ONT_R9_MQ${mq}_${region}/dv_ONT_R9_MQ${mq}_${region}.vcf.gz.tbi"),
+            optional: true,
+            emit: vcfs
+        path("pepper_status.log"),
+           optional: true,
+           emit: status
 
     script:
     def mq_opts = (mq.toInteger() >= 0)
@@ -283,23 +291,44 @@ process PEPPER_MARGIN_DV {
     """
     set -euo pipefail
     module load pepper_deepvariant/0.8 || true
+    module load samtools    || true
 
+    samtools view -hb -@ ${task.cpus} --write-index -o ${region}.bam##idx##${region}.bam.bai ${bam} ${region}
+    set +e
     run_pepper_margin_deepvariant call_variant \
-        -b ${bam} \
+        -b ${region}.bam \
         -f ${ref_fa_gz} \
+        -p dv_ONT_R9_MQ${mq}_${region} \
         -o dv_ONT_R9_MQ${mq}_${region} \
         ${mq_opts} \
         -t ${task.cpus} \
-        -r ${region} \
         --ont_r9_guppy5_sup \
         --gpu
+    pm_rc=\$?
+    set -e
+
+    if [[ \${pm_rc} -ne 0 ]]; then
+        log_file=dv_ONT_R9_MQ${mq}_${region}/logs/2_margin_haplotag.log
+        if [[ -s "\${log_file}" ]]; then
+            last_line=\$(tail -n 1 "\${log_file}" 2>/dev/null || true)
+            if [[ "\${last_line}" == *"No valid VCF entries found!"* ]]; then
+                echo "WARNING :: PEPPER_MARGIN_DV returned no variants for ${region} (expected for some small chromosomes). Marking task complete." > pepper_status.log
+                exit 0
+            fi
+            echo "ERROR :: run_pepper_margin_deepvariant failed (exit \${pm_rc}). Last log line: \${last_line}" >&2
+        else
+            echo "ERROR :: run_pepper_margin_deepvariant failed (exit \${pm_rc}) and no 2_margin_haplotag.log was found." >&2
+        fi
+        exit \${pm_rc}
+    fi
+
     """
 
     stub:
     """
     mkdir -p dv_ONT_R9_MQ${mq}_${region}
-    touch dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz
-    touch dv_ONT_R9_MQ${mq}_${region}/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz.tbi
+    touch dv_ONT_R9_MQ${mq}_${region}/dv_ONT_R9_MQ${mq}_${region}.vcf.gz
+    touch dv_ONT_R9_MQ${mq}_${region}/dv_ONT_R9_MQ${mq}_${region}.vcf.gz.tbi
     """
 }
 
@@ -309,6 +338,7 @@ process PEPPER_MARGIN_DV {
  *
  * Inputs:
  *   hap      — haplotype tag (dip)
+ *   ver_from — assembly version tag
  *   mq       — MQ threshold used in scatter step
  *   vcf_list — list of per-chromosome VCF.gz paths (from PEPPER_MARGIN_DV)
  *   tbi_list — matching .tbi index paths
@@ -316,27 +346,28 @@ process PEPPER_MARGIN_DV {
 process DV_MERGE_CHR_VCFS {
     label 'quick_small'
     tag "${hap}:ONT_R9:MQ${mq}"
-    publishDir "${params.dv_outdir}/${params.asm_ver}.${hap}.ont.MQ${mq}",
+    publishDir "${params.dv_outdir}/${params.asm_name}_${ver_from}.${hap}.ont.MQ${mq}",
                mode: 'link', overwrite: true
 
     input:
-    tuple val(hap), val(mq),
+    tuple val(hap), val(ver_from), val(mq),
           path(vcfs),   // staged as an array; bcftools will sort/concat
           path(tbis)
 
     output:
-    tuple val(hap), val(mq),
+    tuple val(hap), val(ver_from), val("ont"), val("ONT_R9"), val(mq),
           path("dv_ONT_R9_MQ${mq}.${hap}.vcf.gz"),
-          path("dv_ONT_R9_MQ${mq}.${hap}.vcf.gz.tbi")
+          path("dv_ONT_R9_MQ${mq}.${hap}.vcf.gz.tbi"),
+          path("dv_ONT_R9_MQ${mq}.${hap}.gvcf.gz"),
+          path("dv_ONT_R9_MQ${mq}.${hap}.gvcf.gz.tbi")
 
     script:
     """
     set -euo pipefail
     module load bcftools     || true
-    module load deepvariant/1.6.1 || true
 
     # Write a sorted file list (bcftools concat needs correct contig order)
-    ls -v dv_ONT_R9_MQ${mq}_*/PEPPER_MARGIN_DEEPVARIANT_FINAL_OUTPUT.vcf.gz \
+    ls -v dv_ONT_R9_MQ${mq}_*.vcf.gz \
         > r9_files_to_mrg.list
 
     bcftools concat -D -a \
@@ -347,13 +378,14 @@ process DV_MERGE_CHR_VCFS {
 
     bcftools index --tbi dv_ONT_R9_MQ${mq}.${hap}.vcf.gz
 
-    vcf_stats_report \
-        --input_vcf  dv_ONT_R9_MQ${mq}.${hap}.vcf.gz \
-        --outfile_base dv_ONT_R9_MQ${mq}.${hap}
+    # Create empty gVCF files (pepper_margin_deepvariant does not produce gVCFs)
+    touch dv_ONT_R9_MQ${mq}.${hap}.gvcf.gz
+    touch dv_ONT_R9_MQ${mq}.${hap}.gvcf.gz.tbi
     """
 
     stub:
     """
     touch dv_ONT_R9_MQ${mq}.${hap}.vcf.gz dv_ONT_R9_MQ${mq}.${hap}.vcf.gz.tbi
+    touch dv_ONT_R9_MQ${mq}.${hap}.gvcf.gz dv_ONT_R9_MQ${mq}.${hap}.gvcf.gz.tbi
     """
 }

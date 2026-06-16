@@ -33,7 +33,7 @@
  * needed by SNV_MERFIN.
  */
 process SNV_FILTER_INTERSECT {
-    label 'quick_snv_filter'
+    label 'snv_filter'
     tag "snv_filter:${ver_from}"
     publishDir "${params.snv_outdir}/${ver_from}_to_${ver_to}/intermediates", mode: 'link', overwrite: true,
                enabled: params.keep_snv_intermediates
@@ -188,10 +188,10 @@ process SNV_FILTER_INTERSECT {
  *   b. merfin -loose  on the merged snv_pre_merfin candidates
  *
  * This step needs 120 GB memory (meryl k-mer lookup) and is submitted to a
- * high-memory Slurm node via the 'norm_snv_merfin' resource label.
+ * high-memory Slurm node via the 'snv_merfin' resource label.
  */
 process SNV_MERFIN {
-    label 'norm_snv_merfin'
+    label 'snv_merfin'
     tag "snv_merfin:${ver_from}_to_${ver_to}"
     publishDir "${params.snv_outdir}/${ver_from}_to_${ver_to}", mode: 'link', overwrite: true,
                saveAs: { fn -> fn.startsWith("snv_candidates.merfin-loose") ? fn : null }
@@ -316,6 +316,10 @@ process SNV_APPLY_CONSENSUS {
     label 'quick_snv_filter'
     tag "consensus:${ver_from}→${ver_to}"
     publishDir "${params.snv_outdir}/${ver_from}_to_${ver_to}", mode: 'link', overwrite: true
+    publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: true,
+               saveAs: { fn -> (fn == "${params.asm_name}_${ver_to}.dip.fa.gz"
+                             || fn == "${params.asm_name}_${ver_to}.dip.fa.gz.gzi"
+                             || fn == "${params.asm_name}_${ver_to}.dip.fa.gz.fai") ? fn : null }
 
     input:
     val(ver_from)
@@ -374,11 +378,9 @@ process SNV_APPLY_CONSENSUS {
  * Outputs (each as a separate named emit):
  *   hap1_ref — [ 'hap1', <ver_to>.hap1.fa.gz, <ver_to>.hap1.fa.gz.fai ]
  *   hap2_ref — [ 'hap2', <ver_to>.hap2.fa.gz, <ver_to>.hap2.fa.gz.fai ]
- *   dip_ref  — [ 'dip',  <ver_to>.dip.fa.gz,  <ver_to>.dip.fa.gz.fai  ]
- *              (copied from the SNV_APPLY_CONSENSUS output for co-location)
  */
 process PREPARE_NEXT_ROUND {
-    label 'quick_snv_filter'
+    label 'snv_filter'
     tag "prepare:${ver_from}_to_${ver_to}"
     publishDir "${params.outdir}/assemblies", mode: 'link', overwrite: true
 
