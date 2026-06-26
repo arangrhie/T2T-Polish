@@ -29,6 +29,10 @@
 
 set -euo pipefail
 
+# Slurm batch jobs start with the system-default umask (0022 on Biowulf),
+# which yields 755 dirs / 644 files and strips group-write.
+umask 0007
+
 mkdir -p logs
 
 # Graceful shutdown: forward SIGTERM (Slurm walltime/scancel) to Nextflow
