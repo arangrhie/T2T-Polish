@@ -54,6 +54,14 @@ params.ont_chemistry      = params.ont_chemistry      ?: 'r10'  // 'r10' or 'r9'
 params.dv_n_shard         = params.dv_n_shard         ?: 12
 params.dv_long_platforms  = params.dv_long_platforms  ?: 'hifi' // long-read platforms to use in hybrid merge
 params.dv_short_platforms = params.dv_short_platforms ?: 'illumina,element' // short-read platforms
+params.evaluate           = params.evaluate           ?: false  // evaluation-only mode (skip DeepVariant/SNV)
+
+// Backward compatibility for legacy run_dv flag:
+// - --evaluate true always enables evaluation-only mode.
+// - Otherwise, honor explicit run_dv if provided.
+// - Default behavior remains polishing mode (DeepVariant enabled).
+def run_dv_enabled = params.evaluate ? false
+                    : (params.containsKey('run_dv') ? (params.run_dv as boolean) : true)
 
 // SNV candidates / polishing parameters
 // Disable with --run_snv_candidates false (and run_dv_ont = true for the ONT track).
@@ -114,6 +122,14 @@ include { SNV_CANDIDATES as SNV_CANDIDATES_R3 } from './workflows/snv_candidates
 include { SNV_CANDIDATES as SNV_CANDIDATES_R4 } from './workflows/snv_candidates'
 include { SNV_CANDIDATES as SNV_CANDIDATES_R5 } from './workflows/snv_candidates'
 
+include { EVALUATION } from './workflows/evaluation'
+
+// Standalone SAM2PAF alias used to backfill PAFs in mapping_dir re-entry when
+// a hap's BAM is on disk but its sibling .pri.paf is missing. Aliased so it
+// does not collide with the SAM2PAF_R1 used inside MAPPING_R1 (NF 25.x
+// requires unique process names per pipeline run).
+include { SAM2PAF as SAM2PAF_BACKFILL } from './modules/winnowmap'
+
 // ------------ helpers -------------------------------------------------------
 def requireParam(String name, Object value) {
     if ( value == null || value.toString().trim().isEmpty() )
@@ -144,8 +160,11 @@ workflow {
     def rounds = (params.polish_rounds as int)
     if ( rounds < 1 ) error "params.polish_rounds must be ≥ 1 (got ${params.polish_rounds})"
     if ( rounds > 5 ) error "params.polish_rounds > 5 is not supported (got ${params.polish_rounds})"
-    if ( ! params.run_dv ) {
-        log.warn "DeepVariant stages are disabled (--run_dv false); overriding params.polish_rounds to 1."
+    if ( params.containsKey('run_dv') ) {
+        log.warn "params.run_dv is deprecated; use --evaluate true for evaluation-only mode."
+    }
+    if ( !run_dv_enabled ) {
+        log.warn "Evaluation-only mode is enabled (--evaluate true); overriding params.polish_rounds to 1."
         rounds = 1
     }
 
@@ -172,6 +191,7 @@ workflow {
     def _pfx = "${params.asm_name}_${params.asm_ver}"
 
     def r1_wm_bams
+    def r1_wm_pafs
     def r1_bwa_bams
     if ( !params.deepvariant_dir && params.mapping_dir ) {
         def mdir = params.mapping_dir.replaceAll('/$', '')
@@ -262,15 +282,52 @@ workflow {
             }
             .filter { hap, v, plat, bam, idx -> bwa_haps_done.contains(hap) }
 
+        // PAFs are published alongside BAMs by SAM2PAF; only mix in PAFs for haps
+        // whose mapping is fully complete on disk so EVALUATION doesn't fire on
+        // missing files.
+        def r1_wm_pafs_from_disk = Channel.fromPath("${mdir}/${_pfx}.*.*/${_pfx}.*.*.pri.paf")
+            .map { f ->
+                def m = (f.name =~ /\.([^.]+)\.([^.]+)\.pri\.paf$/)[0]
+                tuple(m[1], params.asm_ver, m[2], f)
+            }
+            .filter { hap, v, plat, paf -> wm_haps_done.contains(hap) }
+
+        // ---- Backfill: BAMs on disk whose sibling .pri.paf is missing ----
+        // Without this, EVALUATION silently no-ops (the channel filter for the
+        // missing dip hifi/ont PAF emits nothing, so combine() produces zero
+        // items and FULL_EVALUATION is never instantiated).
+        def paf_on_disk = _pfx_subdirs
+            .collectMany { dir -> dir.listFiles()?.toList() ?: [] }
+            .findAll { it.name ==~ /.*\.([^.]+)\.([^.]+)\.pri\.paf$/ }
+            .collect { f ->
+                def m = (f.name =~ /\.([^.]+)\.([^.]+)\.pri\.paf$/)[0]
+                [m[1], m[2]]
+            } as Set
+
+        def wm_needs_paf = wm_on_disk.findAll { !paf_on_disk.contains(it) && wm_haps_done.contains(it[0]) }
+        log.info "mapping_dir scan: paf_on_disk = ${paf_on_disk}"
+        if (wm_needs_paf) {
+            log.info "mapping_dir backfill: regenerating PAF via SAM2PAF for BAMs with no sibling .pri.paf: ${wm_needs_paf}"
+        }
+
+        def r1_bams_need_paf = r1_wm_from_disk
+            .filter { hap, v, plat, bam, idx -> wm_needs_paf.contains([hap, plat]) }
+        def r1_wm_pafs_backfilled = SAM2PAF_BACKFILL(r1_bams_need_paf)
+
         r1_wm_bams  = r1_wm_from_disk.mix( MAPPING_R1.out.wm_pri_bams )
+        r1_wm_pafs  = r1_wm_pafs_from_disk
+            .mix( MAPPING_R1.out.wm_pri_pafs )
+            .mix( r1_wm_pafs_backfilled )
         r1_bwa_bams = r1_bwa_from_disk.mix( MAPPING_R1.out.bwa_mrg_bams )
     } else if ( !params.deepvariant_dir ) {
         MAPPING_R1( BUILD_REFS.out.wm_refs, BUILD_REFS.out.bwa_refs )
         r1_wm_bams  = MAPPING_R1.out.wm_pri_bams
+        r1_wm_pafs  = MAPPING_R1.out.wm_pri_pafs
         r1_bwa_bams = MAPPING_R1.out.bwa_mrg_bams
     } else {
         log.info "deepvariant_dir is set; skipping MAPPING_R1 and mapping_dir re-entry for Round-1."
         r1_wm_bams  = Channel.empty()
+        r1_wm_pafs  = Channel.empty()
         r1_bwa_bams = Channel.empty()
     }
 
@@ -350,7 +407,7 @@ workflow {
         log.info "SNV_CANDIDATES inventory: Round-1 complete=${r1_snv_present}"
     }
 
-    if ( params.run_dv ) {
+    if ( run_dv_enabled ) {
         def r1_dv_vcfs
         if ( params.deepvariant_dir && r1_all_dv_present ) {
             log.info "Round-1 DeepVariant: all expected outputs found in deepvariant_dir; skipping DEEPVARIANT_R1"
@@ -421,6 +478,22 @@ workflow {
             SNV_CANDIDATES_R5( DEEPVARIANT_R5.out.dv_vcfs, r5_refs, ver[4], ver[5] )
         }
     } else {
-        log.info "Skipping DeepVariant and SNV candidate stages (--run_dv false)."
+        log.info "Skipping DeepVariant and SNV candidate stages (--evaluate true)."
+        
+        // ---- Evaluation Stage (when evaluate = true) ----
+        // Run post-assembly evaluation: Merqury QV, pattern analysis, issue detection
+        
+        if ( !params.hybrid_meryl ) {
+            log.warn "params.hybrid_meryl not set; skipping EVALUATION workflow."
+        } else {
+            def asm_dip_input = Channel.of(
+                tuple("${params.asm_name}_${params.asm_ver}", 
+                      file("${params.outdir}/assemblies/${params.asm_name}_${params.asm_ver}.dip.fa.gz"),
+                      file("${params.outdir}/assemblies/${params.asm_name}_${params.asm_ver}.dip.fa.gz.fai"),
+                      params.asm_ver)
+            )
+            
+            EVALUATION( asm_dip_input, r1_wm_pafs )
+        }
     }
 }

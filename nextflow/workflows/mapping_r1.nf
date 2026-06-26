@@ -40,7 +40,7 @@ workflow MAPPING_R1 {
     def mergedHifi = WINNOWMAP_MERGE_HIFI_R1( mappedByPlat.hifi.groupTuple(by: [0, 1, 2]) )
     def mergedOnt  = WINNOWMAP_MERGE_ONT_R1(  mappedByPlat.ont .groupTuple(by: [0, 1, 2]) )
     def filtered = WINNOWMAP_FILTER_R1( mergedHifi.mix(mergedOnt) )
-    SAM2PAF_R1(filtered)
+    def filteredPafs = SAM2PAF_R1(filtered)
 
     // ---- BWA (Illumina + Element) ----
     def illGlob  = params.platforms.contains('illumina') ? params.read_glob_illumina : null
@@ -57,5 +57,6 @@ workflow MAPPING_R1 {
 
     emit:
     wm_pri_bams  = filtered         // [ hap, ver_from, platform, bam, bai ]
+    wm_pri_pafs  = filteredPafs     // [ hap, ver_from, platform, paf ]
     bwa_mrg_bams = bwaMerged        // [ hap, ver_from, platform, bam, csi ]
 }

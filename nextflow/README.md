@@ -21,14 +21,16 @@ nextflow/                    # Entry point: params + include + workflow {}
 │   ├── deepvariant.nf       # MERGE_HYBRID, DV_MAKE_EXAMPLES,
 │   │                        #   DV_CALL_VARIANTS, DV_POSTPROCESS,
 │   │                        #   PEPPER_MARGIN_DV, DV_MERGE_CHR_VCFS
-│   └── snv_candidates.nf    # SNV_FILTER_INTERSECT, SNV_MERFIN,
-│                            #   SNV_APPLY_CONSENSUS, PREPARE_NEXT_ROUND
+│   ├── snv_candidates.nf    # SNV_FILTER_INTERSECT, SNV_MERFIN,
+│   │                        #   SNV_APPLY_CONSENSUS, PREPARE_NEXT_ROUND
+│   └── evaluation.nf        # FULL_EVALUATION (Merqury QV, pattern, HiFi/ONT issues)
 └── workflows/
     ├── references.nf        # BUILD_REFS (round 1 — builds from raw FASTAs)
     │                        # BUILD_REFS_FROM_FILES (rounds 2+ — takes polished FASTAs)
     ├── mapping_r{1..5}.nf   # MAPPING_R{N} sub-workflows (per-round aliases)
     ├── deepvariant_r{1..5}.nf  # DEEPVARIANT_R{N} sub-workflows (per-round aliases)
-    └── snv_candidates.nf    # SNV_CANDIDATES sub-workflow (bcftools + Merfin + consensus)
+    ├── snv_candidates.nf    # SNV_CANDIDATES sub-workflow (bcftools + Merfin + consensus)
+    └── evaluation.nf        # EVALUATION sub-workflow (post-polish, --evaluate true)
 ```
 
 ## Setup
@@ -95,20 +97,19 @@ sbatch nextflow/run.sh user.config
 ```
 
 * Resume
-If it crashed for some reason, edit user.config to point to the intermediate paths of the results folder
+If it crashed for some reason, edit user.config to point to the intermediate paths of the results folder (`assembly_dir`, `mapping_dir`, and/or `deepvariant_dir`)
 ```sh
 sbatch nextflow/run.sh user.config -resume
 ```
 
-* Run only 1 round of polishing
-```sh
-sbatch nextflow/run.sh user.config --polish_rounds 1
-```
+* Evaluation-only mode (post-polish)
+Run post-assembly evaluation on the `dip` assembly.
+This mode forces `polish_rounds = 1` (no further polishing rounds are executed) and requires `params.hybrid_meryl` to be set. Merqury QV, microsatellite/telomere pattern annotation, and HiFi+ONT issue tracks will be generated.
 
-* Post-polish mode
-Stop after mapping for evaluation purposes. Skip DeepVariant and SNV_Candidates
+Replaces the legacy `--run_dv false` flag; `--run_dv` still works for backward
+compatibility but is deprecated.
 ```sh
-sbatch nextflow/run.sh user.config --run_dv false
+sbatch nextflow/run.sh user.config --evaluate true
 ```
 
 * Keep per-read / per-pair intermediate BAMs in the results directory
@@ -119,6 +120,12 @@ sbatch nextflow/run.sh -c user.config --keep_intermediates true
 * Use R9 ONT chemistry
 ```sh
 sbatch nextflow/run.sh -c user.config --ont_chemistry r9
+```
+
+* Run only 1 round of polishing
+By default, runs 2 rounds of polishing
+```sh
+sbatch nextflow/run.sh user.config --polish_rounds 1
 ```
 
 * For debugging
@@ -205,7 +212,25 @@ results/
 │   │   └── (same structure)
 │   └── bTaeGut7_v0.1.dip.{hifi,ont,illumina,element,hifi_illumina}/
 │       └── (same structure)
-├── deepvariant/                  (disable with --run_dv false)
+│
+│  Evaluation outputs (only with --evaluate true; published under params.outdir)
+├── merqury/                      (Merqury QV evaluation on dip)
+│   ├── {asm_name}_{asm_ver}_only.bed    — assembly-only k-mer error regions
+│   ├── {asm_name}_{asm_ver}_only.wig    — per-base k-mer error track
+│   ├── {asm_name}_{asm_ver}.qv          — overall assembly QV
+│   └── {asm_name}_{asm_ver}.{asm_name}_{asm_ver}.qv  — per-scaffold QV
+├── pattern/                      (microsatellite / telomere / gap annotation on dip)
+│   ├── {asm_name}_{asm_ver}.bed         — scaffold intervals
+│   ├── {asm_name}_{asm_ver}.telo.bed    — telomere repeats (seqtk telo)
+│   ├── {asm_name}_{asm_ver}.exclude.bed — assembly gaps (seqtk gap)
+│   ├── {asm_name}_{asm_ver}.error.bed   — merged Merqury error regions
+│   └── {asm_name}_{asm_ver}/*.bw        — per-pattern microsatellite tracks
+├── issues/                       (HiFi + ONT coverage-based issue detection on dip)
+│   ├── hifi/   {asm_name}_{asm_ver}.issues.{bed,fm.bed,bb}, .cov.{wig,bw},
+│   │           cov.{mean,med,sd,theta}.txt, {high,low}_cutoff.txt
+│   ├── ont/    (same structure as hifi/)
+│   └── {asm_name}_{asm_ver}.issues.{bed,bb}  — HiFi ∩ ONT consensus issues
+├── deepvariant/                  (skipped with --evaluate true)
 │   │
 │   │  Track A — Hybrid (all three haps)
 │   ├── bTaeGut7_v0.1.hap1.hifi_illumina.MQ5/   (hap1/hap2 → MQ 5)
@@ -337,6 +362,7 @@ See the [Nextflow executor docs](https://www.nextflow.io/docs/latest/executor.ht
 | `params.dv_short_platforms` | `illumina,element`        | Short-read platform(s) used in hybrid merge |
 | `params.ont_chemistry`      | `r10`                     | ONT chemistry for Track B dip calling: `r10` (DeepVariant `ONT_R104`) or `r9` (PEPPER-Margin-DV). **If you have mixed R9/R10 data, use r10 only.** |
 | `params.run_snv_candidates`  | `true`                    | Run SNV candidate collection + Merfin after DeepVariant. Disable with `--run_snv_candidates false`. |
+| `params.evaluate`            | `false`                   | Evaluation-only mode: skip DeepVariant and SNV_Candidates, run post-assembly evaluation (Merqury QV, pattern, HiFi/ONT issues) on `dip`. Forces `polish_rounds = 1`. Requires `params.hybrid_meryl`. Replaces the deprecated `--run_dv false` flag. |
 | `params.snv_outdir`          | `${outdir}/snv_candidates`| Output directory for SNV candidate VCFs        |
 | `params.hybrid_meryl`        | _(required)_              | Path to hybrid (HiFi + Illumina/Element) read k-mer meryl database (`*.k31.meryl` dir) |
 | `params.merfin_peak`         | _(required)_              | Integer peak coverage value for Merfin (from GenomeScope / meryl histogram) |
