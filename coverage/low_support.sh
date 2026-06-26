@@ -39,21 +39,23 @@ set -o pipefail
 export asset=$tools/asset
 module load bedtools
 
-if [[ "$3" == "ONT" ]] || [[ "$3" == "ont" ]]; then
+platform=$(echo $3 | tr '[:lower:]' '[:upper:]')
+if [[ "$platform" == "ONT" ]]; then
   asset_opt=""
   clip_thresh="15"
-elif [[ "$3" == "HiFi" ]] || [[ "$3" == "hifi" ]]; then
+elif [[ "$platform" == "HIFI" ]]; then
   asset_opt="-l 0"
   clip_thresh="10"
-elif [[ "$3" == "Hybrid" ]] || [[ "$3" == "hybrid" ]]; then
+  platform="HiFi"
+elif [[ "$platform" == "HYBRID" ]]; then
   asset_opt="-l 0"
   clip_thresh="5"
 else
-  echo "$3 not recognizable. Exit."
+  echo "$platform not recognizable. Exit."
   exit -1
 fi
 
-echo "#### $3 Mode. LOW: $LOW, HIGH: $HIGH ####"
+echo "#### $platform Mode. LOW: $LOW, HIGH: $HIGH ####"
 
 echo "# Collect low coverage with Asset; $asset_opt"
 set -x

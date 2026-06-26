@@ -7,7 +7,10 @@ fi
 
 pri=$1
 pri=${pri/.paf/}
-name=$2
+name=`echo $2 | tr '[:lower:]' '[:upper:]'`
+if [[ $name == "HIFI" ]]; then
+  name="HiFi"
+fi
 full=$3
 
 set -e
@@ -18,7 +21,6 @@ collect_stat() {
   out_prefix=$2
   WINDOW=$3 # 1024
   platform=$4
-  
   perstrand=$5
 
   if [[ "$perstrand" -eq 1 ]]; then
@@ -85,7 +87,7 @@ collect_coverage() {
 if [[ $full == "full" ]]; then
 
   # Collect read-length, mq, idy tracks
-  collect_stat $pri.paf $pri 1024
+  collect_stat $pri.paf $pri 1024 "$name"
 
   # Per strand stat tracks
   collect_stat $pri.paf $pri 1024 "$name" 1
