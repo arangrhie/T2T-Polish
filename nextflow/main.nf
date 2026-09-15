@@ -100,27 +100,15 @@ if ( _active_short && !params.read_glob_illumina && !params.read_glob_element )
 // ------------ imports -------------------------------------------------------
 include { BUILD_REFS                                  } from './workflows/references'
 include { BUILD_REFS_FROM_FILES as BUILD_REFS_R2      } from './workflows/references'
-include { BUILD_REFS_FROM_FILES as BUILD_REFS_R3      } from './workflows/references'
-include { BUILD_REFS_FROM_FILES as BUILD_REFS_R4      } from './workflows/references'
-include { BUILD_REFS_FROM_FILES as BUILD_REFS_R5      } from './workflows/references'
 
 include { MAPPING_R1  } from './workflows/mapping_r1'
 include { MAPPING_R2  } from './workflows/mapping_r2'
-include { MAPPING_R3  } from './workflows/mapping_r3'
-include { MAPPING_R4  } from './workflows/mapping_r4'
-include { MAPPING_R5  } from './workflows/mapping_r5'
 
 include { DEEPVARIANT_R1 } from './workflows/deepvariant_r1'
 include { DEEPVARIANT_R2 } from './workflows/deepvariant_r2'
-include { DEEPVARIANT_R3 } from './workflows/deepvariant_r3'
-include { DEEPVARIANT_R4 } from './workflows/deepvariant_r4'
-include { DEEPVARIANT_R5 } from './workflows/deepvariant_r5'
 
 include { SNV_CANDIDATES as SNV_CANDIDATES_R1 } from './workflows/snv_candidates'
 include { SNV_CANDIDATES as SNV_CANDIDATES_R2 } from './workflows/snv_candidates'
-include { SNV_CANDIDATES as SNV_CANDIDATES_R3 } from './workflows/snv_candidates'
-include { SNV_CANDIDATES as SNV_CANDIDATES_R4 } from './workflows/snv_candidates'
-include { SNV_CANDIDATES as SNV_CANDIDATES_R5 } from './workflows/snv_candidates'
 
 include { EVALUATION } from './workflows/evaluation'
 
@@ -147,6 +135,227 @@ def bumpVersion(String ver) {
     m ? "${m[0][1]}${(m[0][2] as int) + 1}" : "${ver}_polished"
 }
 
+// ------------ disk-scan re-entry helpers -----------------------------------
+// Inspect the published output tree for a given ${asm_name}_${ver} prefix and
+// report which BAMs / VCFs / polished FASTAs already exist.  Used to gate
+// MAPPING_R{n}, DEEPVARIANT_R{n} and SNV_CANDIDATES_R{n} so a partial run is
+// picked up automatically even when Nextflow's -resume cache is unavailable
+// (e.g. the work/ directory was cleared or the run was launched fresh).
+//
+// These helpers are pure Groovy and return plain Maps; the workflow body is
+// responsible for building Channels from the reported files.
+
+def _pickBamIdx(bam) {
+    def b = file("${bam}.bai")
+    b.exists() ? b : file("${bam}.csi")
+}
+
+def scanMappingDir(String mdir, String pfx, platforms, boolean ontMapHaps) {
+    // Compute the expected (hap, platform) BAM combos from params.platforms:
+    //   hifi         → hap1, hap2, dip
+    //   ont          → dip     (also hap1, hap2 iff ont_map_haps)
+    //   illumina|element (short) → hap1, hap2, dip
+    //   hybrid (synthetic; needed by DEEPVARIANT_R{n} hybrid track)
+    //                → present iff both hifi bam AND short-read bam exist for that hap
+    // Only combos matching platforms in `platforms` are ever "expected".
+    // Accept either a List<String> or a comma-separated String — Nextflow may
+    // hand us the raw config value, and `String as Set` in Groovy silently
+    // char-splits, so normalise here.
+    def platList = (platforms instanceof List)
+        ? platforms
+        : (platforms == null ? [] : platforms.toString().tokenize(',').collect { it.trim() }.findAll { it })
+    def platSet    = platList as Set
+    def haps       = ['hap1', 'hap2', 'dip']
+    def shortPlats = ['illumina', 'element'].findAll { platSet.contains(it) }
+    // The DV hybrid track combines HiFi with a single short-read platform;
+    // in practice illumina wins if both are provided (matches _short_for_hybrid).
+    def usedShort  = shortPlats ? (shortPlats.contains('illumina') ? 'illumina' : shortPlats[0]) : null
+
+    def expectedHifi  = platSet.contains('hifi')
+        ? haps.collect { [it, 'hifi'] } : []
+    def expectedOnt   = platSet.contains('ont')
+        ? (ontMapHaps ? haps.collect { [it, 'ont'] } : [['dip', 'ont']]) : []
+    def expectedLong  = (expectedHifi + expectedOnt)
+    def expectedShort = shortPlats.collectMany { plat -> haps.collect { [it, plat] } }
+    def expectedHybridHaps = (platSet.contains('hifi') && usedShort) ? haps : []
+
+    def bamPath   = { hap, plat, suffix ->
+        "${mdir}/${pfx}.${hap}.${plat}/${pfx}.${hap}.${plat}${suffix}"
+    }
+    def existsBam = { hap, plat, suffix -> new File(bamPath(hap, plat, suffix)).exists() }
+
+    def emptyResult = [
+        expected_long   : expectedLong  as Set,
+        expected_short  : expectedShort as Set,
+        expected_hybrid_haps : expectedHybridHaps as Set,
+        present_long    : [] as Set,
+        present_short   : [] as Set,
+        missing_long    : expectedLong  as Set,
+        missing_short   : expectedShort as Set,
+        hybrid_ready_haps: [] as Set,
+        missing_hybrid_haps: expectedHybridHaps as Set,
+        wm_haps_done    : [],
+        bwa_haps_done   : [],
+        used_short      : usedShort,
+        paf_on_disk     : [] as Set
+    ]
+    if ( !mdir || !(new File(mdir).isDirectory()) ) return emptyResult
+
+    // Per-combo presence check (constructed paths — no globs, no regex).
+    def presentLong  = (expectedLong .findAll { hap, plat -> existsBam(hap, plat, '.pri.bam')       }) as Set
+    def presentShort = (expectedShort.findAll { hap, plat -> existsBam(hap, plat, '.dedup.pri.bam') }) as Set
+    def missingLong  = ((expectedLong  as Set) - presentLong)  as Set
+    def missingShort = ((expectedShort as Set) - presentShort) as Set
+
+    // Hybrid readiness (per hap): hifi bam + short-read bam both present.
+    def hybridReady = expectedHybridHaps.findAll { hap ->
+        presentLong .contains([hap, 'hifi']) &&
+        presentShort.contains([hap, usedShort])
+    } as Set
+    def missingHybrid = ((expectedHybridHaps as Set) - hybridReady) as Set
+
+    // Per-hap mapping-stage completeness (all its expected combos present).
+    def wmDone = haps.findAll { hap ->
+        def exp = expectedLong.findAll { it[0] == hap }
+        exp && exp.every { presentLong.contains(it) }
+    }
+    def bwaDone = haps.findAll { hap ->
+        def exp = expectedShort.findAll { it[0] == hap }
+        exp && exp.every { presentShort.contains(it) }
+    }
+
+    // Sibling PAFs (used by R1 evaluation; only for winnowmap combos).
+    def pafOn = (expectedLong.findAll { hap, plat ->
+        new File("${mdir}/${pfx}.${hap}.${plat}/${pfx}.${hap}.${plat}.pri.paf").exists()
+    }) as Set
+
+    return [
+        expected_long   : expectedLong  as Set,
+        expected_short  : expectedShort as Set,
+        expected_hybrid_haps : expectedHybridHaps as Set,
+        present_long    : presentLong,
+        present_short   : presentShort,
+        missing_long    : missingLong,
+        missing_short   : missingShort,
+        hybrid_ready_haps: hybridReady,
+        missing_hybrid_haps: missingHybrid,
+        wm_haps_done    : wmDone,
+        bwa_haps_done   : bwaDone,
+        used_short      : usedShort,
+        paf_on_disk     : pafOn
+    ]
+}
+
+def scanDeepVariantDir(String dvdir, String pfx, String ver,
+                        int mqHap, int mqDip, String hybridCombo, String ontMode) {
+    def records = []
+    def missing = []
+    def hybridNeeded = [] as Set   // haps with a missing hybrid combo
+    def ontDipNeeded = false        // true iff dip ONT combo is missing
+    if ( !dvdir || !(new File(dvdir).isDirectory()) ) {
+        return [ records: records, missing_keys: ['<no dvdir>'], all_present: false,
+                 hybrid_needed_haps: ['hap1','hap2','dip'] as Set, ont_dip_needed: true ]
+    }
+    def expected = [
+        [hap: 'hap1', combo: hybridCombo, mode: 'HYBRID_PACBIO_ILLUMINA', mq: mqHap],
+        [hap: 'hap2', combo: hybridCombo, mode: 'HYBRID_PACBIO_ILLUMINA', mq: mqHap],
+        [hap: 'dip',  combo: hybridCombo, mode: 'HYBRID_PACBIO_ILLUMINA', mq: mqDip],
+        [hap: 'dip',  combo: 'ont',       mode: ontMode,                  mq: mqDip]
+    ]
+    expected.each { e ->
+        def runDir = "${dvdir}/${pfx}.${e.hap}.${e.combo}.MQ${e.mq}"
+        def vcf   = "${runDir}/dv_${e.mode}_MQ${e.mq}.${e.hap}.vcf.gz"
+        def tbi   = "${vcf}.tbi"
+        def gvcf  = "${runDir}/dv_${e.mode}_MQ${e.mq}.${e.hap}.gvcf.gz"
+        def gtbi  = "${gvcf}.tbi"
+        def ok = [vcf,tbi,gvcf,gtbi].every { new File(it).exists() }
+        def key = "${e.hap}|${e.combo}|${e.mode}|MQ${e.mq}"
+        if (ok) {
+            records << tuple(e.hap, ver, e.combo, e.mode, e.mq,
+                             file(vcf), file(tbi), file(gvcf), file(gtbi))
+        } else {
+            missing << key
+            if (e.combo == 'ont') ontDipNeeded = true
+            else                  hybridNeeded << e.hap
+        }
+    }
+    return [ records: records, missing_keys: missing, all_present: missing.isEmpty(),
+             hybrid_needed_haps: hybridNeeded, ont_dip_needed: ontDipNeeded ]
+}
+
+/*
+ * For each DV combo whose final VCF is missing, check whether upstream
+ * intermediate outputs are already on disk so DEEPVARIANT_R{n} can start
+ * from the latest available stage:
+ *   - MERGE_HYBRID:      ${mdir}/${pfx}.{hap}.${hybridCombo}/${pfx}.{hap}.${hybridCombo}.bam(+.bai)
+ *   - DV_MAKE_EXAMPLES:  ${dvdir}/${pfx}.{hap}.{combo}.MQ{mq}/examples/  (directory)
+ * Only combos in neededHybridHaps / ontDipNeeded are scanned — combos whose
+ * VCF is already present are handled by scanDeepVariantDir and never reach
+ * DEEPVARIANT_R{n}.
+ */
+def scanDvIntermediates(String dvdir, String mdir, String pfx, String ver,
+                        int mqHap, int mqDip, String hybridCombo, String ontMode,
+                        neededHybridHaps, boolean ontDipNeeded) {
+    def hybHaps = neededHybridHaps ? (neededHybridHaps as List) : []
+    def mergedRecords       = []
+    def hybExamplesRecords  = []
+    def ontExamplesRecords  = []
+
+    hybHaps.each { hap ->
+        def mq = (hap == 'dip') ? mqDip : mqHap
+        def mergedBam = "${mdir}/${pfx}.${hap}.${hybridCombo}/${pfx}.${hap}.${hybridCombo}.bam"
+        def mergedBai = "${mergedBam}.bai"
+        if (new File(mergedBam).exists() && new File(mergedBai).exists()) {
+            mergedRecords << tuple(hap, ver, hybridCombo, file(mergedBam), file(mergedBai))
+        }
+        def hybEx = "${dvdir}/${pfx}.${hap}.${hybridCombo}.MQ${mq}/examples"
+        if (new File(hybEx).isDirectory()) {
+            hybExamplesRecords << tuple(hap, ver, hybridCombo, 'HYBRID_PACBIO_ILLUMINA', mq, file(hybEx))
+        }
+    }
+
+    if (ontDipNeeded) {
+        def hap = 'dip'
+        def mq  = mqDip
+        def ontEx = "${dvdir}/${pfx}.${hap}.ont.MQ${mq}/examples"
+        if (new File(ontEx).isDirectory()) {
+            ontExamplesRecords << tuple(hap, ver, 'ont', ontMode, mq, file(ontEx))
+        }
+    }
+
+    return [
+        merged_records       : mergedRecords,
+        hyb_examples_records : hybExamplesRecords,
+        ont_examples_records : ontExamplesRecords
+    ]
+}
+
+def scanSnvOutputs(String snvdir, String asmout, String asmName,
+                    String verFrom, String verTo) {
+    def snvBase  = "${snvdir}/${verFrom}_to_${verTo}"
+    def loose    = "${snvBase}/snv_candidates.merfin-loose.vcf.gz"
+    def looseTbi = "${loose}.tbi"
+
+    def hap1Fa = "${asmout}/${asmName}_${verTo}.hap1.fa.gz"
+    def hap2Fa = "${asmout}/${asmName}_${verTo}.hap2.fa.gz"
+    def dipFa  = "${asmout}/${asmName}_${verTo}.dip.fa.gz"
+
+    def hap1Ok = [hap1Fa, "${hap1Fa}.gzi", "${hap1Fa}.fai"].every { new File(it).exists() }
+    def hap2Ok = [hap2Fa, "${hap2Fa}.gzi", "${hap2Fa}.fai"].every { new File(it).exists() }
+    def dipOk  = [dipFa,  "${dipFa}.gzi",  "${dipFa}.fai" ].every { new File(it).exists() }
+
+    def nextRefsPresent = hap1Ok && hap2Ok && dipOk
+    def snvPresent = new File(loose).exists() && new File(looseTbi).exists() && nextRefsPresent
+    def tuples = nextRefsPresent ? [
+        tuple('hap1', file(hap1Fa), file("${hap1Fa}.gzi"), file("${hap1Fa}.fai")),
+        tuple('hap2', file(hap2Fa), file("${hap2Fa}.gzi"), file("${hap2Fa}.fai")),
+        tuple('dip',  file(dipFa),  file("${dipFa}.gzi"),  file("${dipFa}.fai"))
+    ] : []
+
+    return [ snv_present: snvPresent, next_refs_present: nextRefsPresent,
+             next_refs_tuples: tuples ]
+}
+
 // ------------ entry workflow ------------------------------------------------
 workflow {
 
@@ -159,7 +368,7 @@ workflow {
 
     def rounds = (params.polish_rounds as int)
     if ( rounds < 1 ) error "params.polish_rounds must be ≥ 1 (got ${params.polish_rounds})"
-    if ( rounds > 5 ) error "params.polish_rounds > 5 is not supported (got ${params.polish_rounds})"
+    if ( rounds > 2 ) error "params.polish_rounds > 2 is not supported (got ${params.polish_rounds})"
     if ( params.containsKey('run_dv') ) {
         log.warn "params.run_dv is deprecated; use --evaluate true for evaluation-only mode."
     }
@@ -171,12 +380,12 @@ workflow {
     def ver = []
     ver[0] = params.asm_ver ?: 'v0.1'
     ver[1] = params.asm_ver_next ?: bumpVersion(ver[0])
-    (2..5).each { i -> ver[i] = bumpVersion(ver[i - 1]) }
+    ver[2] = bumpVersion(ver[1])
 
     // =========================================================================
     // Each round is fully sequential: BUILD_REFS → MAPPING → DEEPVARIANT →
     // SNV_CANDIDATES.  Per-round workflow files carry aliased process names
-    // (_R1 … _R5) so NF 25.x sees each process bound exactly once.
+    // (_R1 / _R2) so NF 25.x sees each process bound exactly once.
     // =========================================================================
 
     // ---- Round 1 ------------------------------------------------------------
@@ -331,105 +540,156 @@ workflow {
         r1_bwa_bams = Channel.empty()
     }
 
-    // Optional re-entry inventory for Round-1 DV/SNV outputs.
-    def r1_dv_records      = []
-    def r1_dv_missing_keys = []
-    def r1_all_dv_present  = false
-    def r1_snv_present     = false
-    def r1_snv_next_refs_present = false
+    if ( run_dv_enabled ) {
+        // ---- shared context for disk-scan re-entry (used by all rounds) ----
+        def _short_for_hybrid = _plat_list.contains('illumina') ? 'illumina' :
+                                (_plat_list.contains('element') ? 'element' :
+                                 (_active_short ? _active_short[0] : 'illumina'))
+        def hybrid_combo = "hifi_${_short_for_hybrid}"
+        def ont_mode     = (params.ont_chemistry == 'r9') ? 'ONT_R9' : 'ONT_R104'
 
-    if ( params.deepvariant_dir ) {
-        def dvdir = params.deepvariant_dir.replaceAll('/$', '')
-        def snvdir = params.snv_outdir.replaceAll('/$', '')
-        def asmout = "${params.outdir}/assemblies".replaceAll('/$', '')
+        def _mdir_all     = params.mapping_outdir.replaceAll('/$', '')
+        def _dvdir_all    = params.dv_outdir.replaceAll('/$', '')
+        def _snvdir_all   = params.snv_outdir.replaceAll('/$', '')
+        def _asmout_all   = "${params.outdir}/assemblies".replaceAll('/$', '')
+        def _ont_map_haps = params.ont_map_haps as boolean
+        def _mq_hap       = params.dv_mq_hap.toInteger()
+        def _mq_dip       = params.dv_mq_dip.toInteger()
 
-        def short_for_hybrid = _plat_list.contains('illumina') ? 'illumina' : (_plat_list.contains('element') ? 'element' : (_active_short ? _active_short[0] : 'illumina'))
-        def hybrid_combo = "hifi_${short_for_hybrid}"
-        def ont_mode = (params.ont_chemistry == 'r9') ? 'ONT_R9' : 'ONT_R104'
+        // ---- per-round context builder --------------------------------------
+        // Runs all three disk scans for a given round and returns a Map of
+        // channels + predicates the round body uses to gate MAPPING_R{n} /
+        // DEEPVARIANT_R{n} / SNV_CANDIDATES_R{n}.  Process invocations stay
+        // inline in the per-round if-blocks because Nextflow's AST transformer
+        // only rewrites literal identifiers as process/workflow calls.
+        //
+        // dvdirOverride / mdirOverride — used by Round 1 to point the DV and
+        //                  mapping scans at user-supplied re-entry directories
+        //                  (params.deepvariant_dir / params.mapping_dir).
+        //                  Round 2 leaves them null and scans the default
+        //                  publish dirs (params.dv_outdir / params.mapping_outdir).
+        def roundContext = { int n, String ver_from, String ver_to,
+                              String dvdirOverride = null, String mdirOverride = null ->
+            def _mdir  = mdirOverride  ?: _mdir_all
+            def _dvdir = dvdirOverride ?: _dvdir_all
+            def pfx    = "${params.asm_name}_${ver_from}"
+            // Use _plat_list (guaranteed List<String>) rather than
+            // params.platforms directly — the top-of-script reassignment
+            // of params.platforms may not persist into this closure scope,
+            // and `String as Set` silently char-splits.
+            def mscn = scanMappingDir(_mdir, pfx, _plat_list, _ont_map_haps)
+            log.info "Round-${n} mapping scan (${_mdir}, prefix '${pfx}'):"
+            log.info "  expected long  = ${mscn.expected_long  as List}"
+            log.info "  expected short = ${mscn.expected_short as List}"
+            log.info "  present  long  = ${mscn.present_long   as List}"
+            log.info "  present  short = ${mscn.present_short  as List}"
+            log.info "  missing  long  = ${mscn.missing_long   as List}"
+            log.info "  missing  short = ${mscn.missing_short  as List}"
+            log.info "  hybrid ready (hifi+${mscn.used_short}) haps = ${mscn.hybrid_ready_haps as List}"
+            log.info "  wm_done=${mscn.wm_haps_done} bwa_done=${mscn.bwa_haps_done}"
 
-        def expectedDv = [
-            [hap: 'hap1', combo: hybrid_combo, mode: 'HYBRID_PACBIO_ILLUMINA', mq: params.dv_mq_hap.toInteger()],
-            [hap: 'hap2', combo: hybrid_combo, mode: 'HYBRID_PACBIO_ILLUMINA', mq: params.dv_mq_hap.toInteger()],
-            [hap: 'dip',  combo: hybrid_combo, mode: 'HYBRID_PACBIO_ILLUMINA', mq: params.dv_mq_dip.toInteger()],
-            [hap: 'dip',  combo: 'ont',        mode: ont_mode,                  mq: params.dv_mq_dip.toInteger()]
-        ]
+            // Build disk BAM channels directly from the presence set — no globs.
+            // Only include BAMs for haps that are FULLY done for their track;
+            // partially-done haps get fully re-mapped by MAPPING_R{n} (mapping
+            // does not support skipping individual platforms per hap).
+            def wm_disk_records = mscn.present_long
+                .findAll { hap, plat -> mscn.wm_haps_done.contains(hap) }
+                .collect { hap, plat ->
+                    def bam = file("${_mdir}/${pfx}.${hap}.${plat}/${pfx}.${hap}.${plat}.pri.bam")
+                    tuple(hap, ver_from, plat, bam, _pickBamIdx(bam))
+                }
+            def bwa_disk_records = mscn.present_short
+                .findAll { hap, plat -> mscn.bwa_haps_done.contains(hap) }
+                .collect { hap, plat ->
+                    def bam = file("${_mdir}/${pfx}.${hap}.${plat}/${pfx}.${hap}.${plat}.dedup.pri.bam")
+                    tuple(hap, ver_from, plat, bam, _pickBamIdx(bam))
+                }
+            def wm_disk  = wm_disk_records  ? Channel.fromList(wm_disk_records)  : Channel.empty()
+            def bwa_disk = bwa_disk_records ? Channel.fromList(bwa_disk_records) : Channel.empty()
 
-        log.info "deepvariant_dir inventory: scanning ${dvdir} for Round-1 expected DV outputs"
-        expectedDv.each { e ->
-            def runDir = "${dvdir}/${_pfx}.${e.hap}.${e.combo}.MQ${e.mq}"
-            def vcfPath = "${runDir}/dv_${e.mode}_MQ${e.mq}.${e.hap}.vcf.gz"
-            def tbiPath = "${vcfPath}.tbi"
-            def gvcfPath = "${runDir}/dv_${e.mode}_MQ${e.mq}.${e.hap}.gvcf.gz"
-            def gtbiPath = "${gvcfPath}.tbi"
+            def dvscn = scanDeepVariantDir(_dvdir, pfx, ver_from,
+                _mq_hap, _mq_dip, hybrid_combo, ont_mode)
+            log.info "Round-${n} deepvariant scan (${_dvdir}): all_present=${dvscn.all_present} missing=${dvscn.missing_keys}"
+            log.info "Round-${n} deepvariant: hybrid_needed_haps=${dvscn.hybrid_needed_haps as List} ont_dip_needed=${dvscn.ont_dip_needed}"
+            if (dvscn.all_present)
+                log.info "Round-${n} DeepVariant: all expected outputs found; skipping DEEPVARIANT_R${n}"
 
-            def vcfOk  = new File(vcfPath).exists()
-            def tbiOk  = new File(tbiPath).exists()
-            def gvcfOk = new File(gvcfPath).exists()
-            def gtbiOk = new File(gtbiPath).exists()
-            def key = "${e.hap}|${e.combo}|${e.mode}|MQ${e.mq}"
+            // Intermediate DV output scan — for combos still needing work,
+            // check for merged hybrid BAMs (MERGE_HYBRID output) and DV
+            // examples/ dirs (DV_MAKE_EXAMPLES output) so those stages can be
+            // skipped when their outputs are already on disk.
+            def dv_int = scanDvIntermediates(_dvdir, _mdir, pfx, ver_from,
+                _mq_hap, _mq_dip, hybrid_combo, ont_mode,
+                dvscn.hybrid_needed_haps, dvscn.ont_dip_needed)
+            log.info "Round-${n} DV intermediates on disk:"
+            log.info "  merged hybrid BAMs = ${dv_int.merged_records.collect { it[0] }}"
+            log.info "  hyb examples dirs  = ${dv_int.hyb_examples_records.collect { it[0] }}"
+            log.info "  ont examples dirs  = ${dv_int.ont_examples_records.collect { it[0] }}"
 
-            if (vcfOk && tbiOk && gvcfOk && gtbiOk) {
-                log.info "deepvariant_dir inventory: FOUND    ${key}"
-                r1_dv_records << tuple(e.hap, params.asm_ver, e.combo, e.mode, e.mq,
-                                       file(vcfPath), file(tbiPath), file(gvcfPath), file(gtbiPath))
-            } else {
-                def missingParts = []
-                if (!vcfOk)  missingParts << 'vcf'
-                if (!tbiOk)  missingParts << 'vcf.tbi'
-                if (!gvcfOk) missingParts << 'gvcf'
-                if (!gtbiOk) missingParts << 'gvcf.tbi'
-                log.info "deepvariant_dir inventory: MISSING  ${key} -> ${missingParts.join(',')}"
-                r1_dv_missing_keys << key
-            }
+            def pre_merged_hyb  = dv_int.merged_records       ? Channel.fromList(dv_int.merged_records)       : Channel.empty()
+            def pre_examples_hyb = dv_int.hyb_examples_records ? Channel.fromList(dv_int.hyb_examples_records) : Channel.empty()
+            def pre_examples_ont = dv_int.ont_examples_records ? Channel.fromList(dv_int.ont_examples_records) : Channel.empty()
+
+            def snvscn = scanSnvOutputs(_snvdir_all, _asmout_all, params.asm_name, ver_from, ver_to)
+            log.info "Round-${n} snv scan: snv_present=${snvscn.snv_present} next_refs_present=${snvscn.next_refs_present}"
+            if (snvscn.snv_present)
+                log.info "Round-${n} SNV_CANDIDATES: all expected outputs found; skipping SNV_CANDIDATES_R${n}"
+
+            // Haps whose ref/BAMs are still needed by DEEPVARIANT_R{n}:
+            //   - any hap with a missing hybrid combo (needs hifi + short-read BAMs)
+            //   - dip if ONT combo is missing (needs ont BAM)
+            def dv_needed_haps = (dvscn.hybrid_needed_haps as List) +
+                                 (dvscn.ont_dip_needed ? ['dip'] : [])
+            dv_needed_haps = dv_needed_haps.unique()
+
+            return [
+                wm_haps_done         : mscn.wm_haps_done,
+                bwa_haps_done        : mscn.bwa_haps_done,
+                wm_disk              : wm_disk,
+                bwa_disk             : bwa_disk,
+                dv_all_present       : dvscn.all_present,
+                dv_records           : dvscn.records,
+                dv_hybrid_needed_haps: dvscn.hybrid_needed_haps,
+                dv_ont_dip_needed    : dvscn.ont_dip_needed,
+                dv_needed_haps       : dv_needed_haps,
+                pre_merged_hyb       : pre_merged_hyb,
+                pre_examples_hyb     : pre_examples_hyb,
+                pre_examples_ont     : pre_examples_ont,
+                snv_present          : snvscn.snv_present,
+                snv_next_refs_tuples : snvscn.next_refs_tuples
+            ]
         }
 
-        r1_all_dv_present = (r1_dv_missing_keys.isEmpty())
-        log.info "deepvariant_dir inventory: Round-1 DV complete=${r1_all_dv_present} (${r1_dv_records.size()}/${expectedDv.size()} combos found)"
+        // ---- Round 1 --------------------------------------------------------
+        // R1 uses params.deepvariant_dir (when set) as the DV scan location;
+        // otherwise falls back to the default dv_outdir.  R1's mapping BAM
+        // channels (r1_wm_bams / r1_bwa_bams) come from the mapping_dir
+        // re-entry block above — roundContext's wm_disk / bwa_disk / wm_haps_done
+        // are not consumed here.
+        def r1_ctx = roundContext(1, ver[0], ver[1], params.deepvariant_dir, params.mapping_dir)
 
-        def snvBase = "${snvdir}/${ver[0]}_to_${ver[1]}"
-        def snvLooseVcf = "${snvBase}/snv_candidates.merfin-loose.vcf.gz"
-        def snvLooseTbi = "${snvLooseVcf}.tbi"
-        def snvCandidatesVcf = "${snvBase}/intermediates/snv_candidates.vcf.gz"
-
-        def hap1Fa = "${asmout}/${params.asm_name}_${ver[1]}.hap1.fa.gz"
-        def hap2Fa = "${asmout}/${params.asm_name}_${ver[1]}.hap2.fa.gz"
-        def dipFa  = "${asmout}/${params.asm_name}_${ver[1]}.dip.fa.gz"
-
-        def hap1Ok = new File(hap1Fa).exists() && new File("${hap1Fa}.gzi").exists() && new File("${hap1Fa}.fai").exists()
-        def hap2Ok = new File(hap2Fa).exists() && new File("${hap2Fa}.gzi").exists() && new File("${hap2Fa}.fai").exists()
-        def dipOk  = new File(dipFa).exists()  && new File("${dipFa}.gzi").exists()  && new File("${dipFa}.fai").exists()
-
-        r1_snv_next_refs_present = hap1Ok && hap2Ok && dipOk
-        r1_snv_present = new File(snvLooseVcf).exists() && new File(snvLooseTbi).exists() && r1_snv_next_refs_present
-
-        log.info "SNV_CANDIDATES inventory: loose_vcf=${new File(snvLooseVcf).exists()} tbi=${new File(snvLooseTbi).exists()} candidates_vcf=${new File(snvCandidatesVcf).exists()}"
-        log.info "SNV_CANDIDATES inventory: next_refs hap1=${hap1Ok} hap2=${hap2Ok} dip=${dipOk}"
-        log.info "SNV_CANDIDATES inventory: Round-1 complete=${r1_snv_present}"
-    }
-
-    if ( run_dv_enabled ) {
         def r1_dv_vcfs
-        if ( params.deepvariant_dir && r1_all_dv_present ) {
-            log.info "Round-1 DeepVariant: all expected outputs found in deepvariant_dir; skipping DEEPVARIANT_R1"
-            r1_dv_vcfs = Channel.fromList(r1_dv_records)
+        if ( r1_ctx.dv_all_present ) {
+            r1_dv_vcfs = Channel.fromList(r1_ctx.dv_records)
         } else {
-            if (params.deepvariant_dir) {
-                log.info "Round-1 DeepVariant: missing outputs detected (${r1_dv_missing_keys.size()} combos); running DEEPVARIANT_R1 for missing items only"
+            def r1_dv_refs_needed = r1_dv_refs
+                .filter { hap, v, ref, gzi, fai -> r1_ctx.dv_needed_haps.contains(hap) }
+            def r1_wm_needed = r1_wm_bams.filter { hap, v, plat, bam, idx ->
+                (plat != 'ont' && r1_ctx.dv_hybrid_needed_haps.contains(hap)) ||
+                (plat == 'ont' && hap == 'dip' && r1_ctx.dv_ont_dip_needed)
             }
-            DEEPVARIANT_R1( r1_dv_refs, r1_wm_bams, r1_bwa_bams )
-            r1_dv_vcfs = DEEPVARIANT_R1.out.dv_vcfs
+            def r1_bwa_needed = r1_bwa_bams.filter { hap, v, plat, bam, idx ->
+                r1_ctx.dv_hybrid_needed_haps.contains(hap)
+            }
+            DEEPVARIANT_R1( r1_dv_refs_needed, r1_wm_needed, r1_bwa_needed,
+                            r1_ctx.pre_merged_hyb, r1_ctx.pre_examples_hyb, r1_ctx.pre_examples_ont )
+            r1_dv_vcfs = DEEPVARIANT_R1.out.dv_vcfs.mix( Channel.fromList(r1_ctx.dv_records) )
         }
 
         def r1_next_refs
-
         if ( params.run_snv_candidates ) {
-            if ( params.deepvariant_dir && r1_snv_present ) {
-                log.info "Round-1 SNV_CANDIDATES: all expected outputs found; skipping SNV_CANDIDATES_R1"
-                r1_next_refs = Channel.of(
-                    tuple('hap1', file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.hap1.fa.gz"), file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.hap1.fa.gz.gzi"), file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.hap1.fa.gz.fai")),
-                    tuple('hap2', file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.hap2.fa.gz"), file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.hap2.fa.gz.gzi"), file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.hap2.fa.gz.fai")),
-                    tuple('dip',  file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.dip.fa.gz"),  file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.dip.fa.gz.gzi"),  file("${params.outdir}/assemblies/${params.asm_name}_${ver[1]}.dip.fa.gz.fai"))
-                )
+            if ( r1_ctx.snv_present ) {
+                r1_next_refs = Channel.fromList(r1_ctx.snv_next_refs_tuples)
             } else {
                 requireParam('hybrid_meryl', params.hybrid_meryl)
                 requireParam('merfin_peak',  params.merfin_peak)
@@ -438,44 +698,45 @@ workflow {
             }
         }
 
-        // ---- Round 2 ------------------------------------------------------------
+        // ---- Round 2 --------------------------------------------------------
         if ( rounds >= 2 && params.run_snv_candidates ) {
             BUILD_REFS_R2( r1_next_refs, ver[1] )
-            def r2_refs = BUILD_REFS_R2.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+            def r2_refs = BUILD_REFS_R2.out.wm_refs.map { hap, v, ref, fai, _rep -> tuple(hap, v, ref, fai) }
+            def ctx = roundContext(2, ver[1], ver[2])
 
-            MAPPING_R2( BUILD_REFS_R2.out.wm_refs, BUILD_REFS_R2.out.bwa_refs )
-            DEEPVARIANT_R2( BUILD_REFS_R2.out.dv_refs, MAPPING_R2.out.wm_pri_bams, MAPPING_R2.out.bwa_mrg_bams )
-            SNV_CANDIDATES_R2( DEEPVARIANT_R2.out.dv_vcfs, r2_refs, ver[1], ver[2] )
-        }
+            MAPPING_R2(
+                BUILD_REFS_R2.out.wm_refs .filter { hap, v, ref, fai, rep                -> !ctx.wm_haps_done .contains(hap) },
+                BUILD_REFS_R2.out.bwa_refs.filter { hap, v, ref, fai, amb, ann, bwt, pac, sa -> !ctx.bwa_haps_done.contains(hap) }
+            )
+            def r2_wm_bams  = ctx.wm_disk .mix( MAPPING_R2.out.wm_pri_bams  )
+            def r2_bwa_bams = ctx.bwa_disk.mix( MAPPING_R2.out.bwa_mrg_bams )
 
-        // ---- Round 3 ------------------------------------------------------------
-        if ( rounds >= 3 && params.run_snv_candidates ) {
-            BUILD_REFS_R3( SNV_CANDIDATES_R2.out.next_refs, ver[2] )
-            def r3_refs = BUILD_REFS_R3.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
+            def r2_dv_vcfs
+            if ( ctx.dv_all_present ) {
+                r2_dv_vcfs = Channel.fromList(ctx.dv_records)
+            } else {
+                // Feed only refs / BAMs needed by the missing DV combos:
+                //   hybrid combo (hap): hifi BAM + short-read BAM for that hap
+                //   ont    combo (dip): ont BAM for dip
+                // Already-done DV records are mixed back in below so
+                // SNV_CANDIDATES still receives all four combos.
+                def r2_dv_refs_needed = BUILD_REFS_R2.out.dv_refs
+                    .filter { hap, v, ref, gzi, fai -> ctx.dv_needed_haps.contains(hap) }
+                def r2_wm_needed = r2_wm_bams.filter { hap, v, plat, bam, idx ->
+                    (plat != 'ont' && ctx.dv_hybrid_needed_haps.contains(hap)) ||
+                    (plat == 'ont' && hap == 'dip' && ctx.dv_ont_dip_needed)
+                }
+                def r2_bwa_needed = r2_bwa_bams.filter { hap, v, plat, bam, idx ->
+                    ctx.dv_hybrid_needed_haps.contains(hap)
+                }
+                DEEPVARIANT_R2( r2_dv_refs_needed, r2_wm_needed, r2_bwa_needed,
+                                ctx.pre_merged_hyb, ctx.pre_examples_hyb, ctx.pre_examples_ont )
+                r2_dv_vcfs = DEEPVARIANT_R2.out.dv_vcfs.mix( Channel.fromList(ctx.dv_records) )
+            }
 
-            MAPPING_R3( BUILD_REFS_R3.out.wm_refs, BUILD_REFS_R3.out.bwa_refs )
-            DEEPVARIANT_R3( BUILD_REFS_R3.out.dv_refs, MAPPING_R3.out.wm_pri_bams, MAPPING_R3.out.bwa_mrg_bams )
-            SNV_CANDIDATES_R3( DEEPVARIANT_R3.out.dv_vcfs, r3_refs, ver[2], ver[3] )
-        }
-
-        // ---- Round 4 ------------------------------------------------------------
-        if ( rounds >= 4 && params.run_snv_candidates ) {
-            BUILD_REFS_R4( SNV_CANDIDATES_R3.out.next_refs, ver[3] )
-            def r4_refs = BUILD_REFS_R4.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
-
-            MAPPING_R4( BUILD_REFS_R4.out.wm_refs, BUILD_REFS_R4.out.bwa_refs )
-            DEEPVARIANT_R4( BUILD_REFS_R4.out.dv_refs, MAPPING_R4.out.wm_pri_bams, MAPPING_R4.out.bwa_mrg_bams )
-            SNV_CANDIDATES_R4( DEEPVARIANT_R4.out.dv_vcfs, r4_refs, ver[3], ver[4] )
-        }
-
-        // ---- Round 5 ------------------------------------------------------------
-        if ( rounds >= 5 && params.run_snv_candidates ) {
-            BUILD_REFS_R5( SNV_CANDIDATES_R4.out.next_refs, ver[4] )
-            def r5_refs = BUILD_REFS_R5.out.wm_refs.map { hap, ver_from, ref, fai, _rep -> tuple(hap, ver_from, ref, fai) }
-
-            MAPPING_R5( BUILD_REFS_R5.out.wm_refs, BUILD_REFS_R5.out.bwa_refs )
-            DEEPVARIANT_R5( BUILD_REFS_R5.out.dv_refs, MAPPING_R5.out.wm_pri_bams, MAPPING_R5.out.bwa_mrg_bams )
-            SNV_CANDIDATES_R5( DEEPVARIANT_R5.out.dv_vcfs, r5_refs, ver[4], ver[5] )
+            if ( !ctx.snv_present ) {
+                SNV_CANDIDATES_R2( r2_dv_vcfs, r2_refs, ver[1], ver[2] )
+            }
         }
     } else {
         log.info "Skipping DeepVariant and SNV candidate stages (--evaluate true)."

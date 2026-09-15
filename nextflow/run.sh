@@ -38,12 +38,13 @@ mkdir -p logs
 # Graceful shutdown: forward SIGTERM (Slurm walltime/scancel) to Nextflow
 # so it can flush the cache before exiting.  Without this, a walltime kill
 # corrupts the cache the same way an interactive Ctrl+C does.
-_term() {
-    echo "Caught SIGTERM — sending SIGINT to Nextflow for graceful shutdown..."
-    kill -INT "$NF_PID" 2>/dev/null
-    wait "$NF_PID"
-}
-trap _term SIGTERM
+# Disabling for now. Enable to allow graceful shutdown
+# _term() {
+#     echo "Caught SIGTERM — sending SIGINT to Nextflow for graceful shutdown..."
+#     kill -INT "$NF_PID" 2>/dev/null
+#     wait "$NF_PID"
+# }
+# trap _term SIGTERM
 
 module load nextflow || true
 module load singularity || true   # needed if any process uses a container

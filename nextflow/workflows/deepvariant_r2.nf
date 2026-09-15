@@ -14,26 +14,46 @@ workflow DEEPVARIANT_R2 {
     refs
     wm_bams
     bwa_bams
+    pre_merged_hyb      // channel [hap, ver, combo, bam, bai] — pre-existing merged hybrid BAMs
+    pre_examples_hyb    // channel [hap, ver, combo, mode, mq, examples_dir] — pre-existing HYB examples
+    pre_examples_ont    // channel [hap, ver, combo, mode, mq, examples_dir] — pre-existing ONT examples
 
     main:
     def longPlats  = params.dv_long_platforms .tokenize(',').collect { it.trim() }
     def shortPlats = params.dv_short_platforms.tokenize(',').collect { it.trim() }
 
+    // Skip-set value channels (single-emit Map — wrapped so Nextflow's
+    // .combine() doesn't flatten a List into the tuple, which would break
+    // the downstream .filter/.map arity).
+    def skip_merge_hyb_haps    = pre_merged_hyb  .map { it[0] }.collect().ifEmpty([]).map { list -> [set: list as Set] }
+    def skip_examples_hyb_haps = pre_examples_hyb.map { it[0] }.collect().ifEmpty([]).map { list -> [set: list as Set] }
+    def skip_examples_ont_haps = pre_examples_ont.map { it[0] }.collect().ifEmpty([]).map { list -> [set: list as Set] }
+
     // ---- Track A: Hybrid HiFi + short-read ----
-    def hybrid_input = wm_bams
+    def hybrid_input_all = wm_bams
         .filter { hap, ver, plat, bam, bai -> longPlats.contains(plat) }
         .combine(
             bwa_bams.filter { hap, ver, plat, bam, idx -> shortPlats.contains(plat) },
             by: [0, 1]
         )
-    def hyb_merged       = MERGE_HYBRID_R2(hybrid_input)
+    // Skip MERGE_HYBRID for haps whose merged BAM is already on disk.
+    def hybrid_input = hybrid_input_all
+        .combine(skip_merge_hyb_haps)
+        .filter { hap, ver, longp, longb, longi, shortp, shortb, shorti, skip -> !skip.set.contains(hap) }
+        .map    { hap, ver, longp, longb, longi, shortp, shortb, shorti, _s   -> tuple(hap, ver, longp, longb, longi, shortp, shortb, shorti) }
+    def hyb_merged       = MERGE_HYBRID_R2(hybrid_input).mix(pre_merged_hyb)
     def hyb_merged_ref   = hyb_merged.combine(refs, by: [0, 1])
     def hyb_input        = hyb_merged_ref
         .map { hap, ver, combo, bam, bai, ref, gzi, fai ->
                tuple(hap, ver, combo, 'HYBRID_PACBIO_ILLUMINA',
                      (hap == 'dip') ? params.dv_mq_dip.toInteger() : params.dv_mq_hap.toInteger(),
                      ref, gzi, fai, bam, bai) }
-    def hyb_ex    = DV_MAKE_EXAMPLES_HYB_R2(hyb_input)
+    // Skip DV_MAKE_EXAMPLES for haps whose 'examples/' dir is on disk.
+    def hyb_input_needed = hyb_input
+        .combine(skip_examples_hyb_haps)
+        .filter { hap, ver, combo, mode, mq, ref, gzi, fai, bam, bai, skip -> !skip.set.contains(hap) }
+        .map    { hap, ver, combo, mode, mq, ref, gzi, fai, bam, bai, _s   -> tuple(hap, ver, combo, mode, mq, ref, gzi, fai, bam, bai) }
+    def hyb_ex    = DV_MAKE_EXAMPLES_HYB_R2(hyb_input_needed).mix(pre_examples_hyb)
     def hyb_exref = hyb_input.join(hyb_ex, by: [0,1,2,3,4])
         .map { hap,ver,combo,mode,mq,ref,gzi,fai,bam,bai,examples_dir ->
                tuple(hap,ver,combo,mode,mq,ref,gzi,fai,examples_dir) }
@@ -63,7 +83,12 @@ workflow DEEPVARIANT_R2 {
         ? ont_dip_with_ref.map { hap, ver, plat, bam, bai, ref, gzi, fai ->
               tuple(hap, ver, plat, 'ONT_R104', params.dv_mq_dip.toInteger(), ref, gzi, fai, bam, bai) }
         : Channel.empty()
-    def ont_ex    = DV_MAKE_EXAMPLES_ONT_R2(ont_input)
+    // Skip DV_MAKE_EXAMPLES_ONT for haps whose 'examples/' dir is on disk.
+    def ont_input_needed = ont_input
+        .combine(skip_examples_ont_haps)
+        .filter { hap, ver, combo, mode, mq, ref, gzi, fai, bam, bai, skip -> !skip.set.contains(hap) }
+        .map    { hap, ver, combo, mode, mq, ref, gzi, fai, bam, bai, _s   -> tuple(hap, ver, combo, mode, mq, ref, gzi, fai, bam, bai) }
+    def ont_ex    = DV_MAKE_EXAMPLES_ONT_R2(ont_input_needed).mix(pre_examples_ont)
     def ont_exref = ont_input.join(ont_ex, by: [0,1,2,3,4])
         .map { hap,ver,combo,mode,mq,ref,gzi,fai,bam,bai,examples_dir ->
                tuple(hap,ver,combo,mode,mq,ref,gzi,fai,examples_dir) }

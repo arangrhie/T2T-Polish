@@ -369,7 +369,7 @@ See the [Nextflow executor docs](https://www.nextflow.io/docs/latest/executor.ht
 | `params.merfin`              | `merfin`                  | Path or command name for the `merfin` binary    |
 | `params.keep_snv_intermediates` | `false`               | Publish intermediate VCFs from `SNV_FILTER_INTERSECT` |
 | `params.asm_ver_next`        | _(auto-bumped)_           | Version tag for the first polished assembly (e.g. `v0.2`); if unset, the trailing integer of `asm_ver` is incremented |
-| `params.polish_rounds`       | `2`                       | Number of SNV polishing rounds to run (1–5). |
+| `params.polish_rounds`       | `2`                       | Number of SNV polishing rounds to run (1 or 2). |
 
 ## Execution graph
 
@@ -466,16 +466,11 @@ main.nf
 │  DEEPVARIANT_R2  → hybrid_{hap1,hap2,dip}.vcf.gz + ont_dip.vcf.gz
 │  SNV_CANDIDATES_R2(dv_vcfs, refs, ver[1]→ver[2])
 │     └─→ ver[2].{hap1,hap2,dip}.fa.gz  +  ver[1]_to_ver[2].dip.chain
-│         next_refs  →  Round 3
 │
-│  ╔══════════════════════════════════════════════════════════════════════════════════╗
-└──╢  Rounds 3–5 follow the same pattern  (params.polish_rounds, default: 2)          ║
-   ╚══════════════════════════════════════════════════════════════════════════════════╝
 
 Final outputs per round  (snv_candidates/):
   ver[0]_to_ver[1]/  ver[1].{hap1,hap2,dip}.fa.gz  +  ver[0]_to_ver[1].dip.chain   ← Round 1
   ver[1]_to_ver[2]/  ver[2].{hap1,hap2,dip}.fa.gz  +  ver[1]_to_ver[2].dip.chain   ← Round 2
-  …
 ```
 
 **Concurrency notes:**
