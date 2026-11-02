@@ -48,8 +48,8 @@ params.deepvariant_dir  = params.deepvariant_dir  ?: null
 // DeepVariant parameters
 params.dv_outdir          = params.dv_outdir          ?: "${params.outdir}/deepvariant"
 params.dv_sample          = params.dv_sample          ?: null   // sample name in VCF; defaults to hap tag
-params.dv_mq_hap          = params.dv_mq_hap          ?: 0      // MQ filter for hap1/hap2 merged BAMs
-params.dv_mq_dip          = params.dv_mq_dip          ?: 5      // MQ filter for dip   merged BAMs
+params.dv_mq_hap          = params.dv_mq_hap != null ? params.dv_mq_hap : 5  // MQ filter for hap1/hap2 merged BAMs
+params.dv_mq_dip          = params.dv_mq_dip != null ? params.dv_mq_dip : 0  // MQ filter for dip   merged BAMs
 params.ont_chemistry      = params.ont_chemistry      ?: 'r10'  // 'r10' or 'r9'
 params.dv_n_shard         = params.dv_n_shard         ?: 12
 params.dv_long_platforms  = params.dv_long_platforms  ?: 'hifi' // long-read platforms to use in hybrid merge
